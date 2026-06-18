@@ -2207,7 +2207,7 @@
                 patient_otp_invalid: "Codice OTP errato. Riprova.",
                 patient_consent_signed_success: "Consenso firmato con successo! Puoi chiudere questa pagina.",
                 email_invite_simulated_title: "Invito e-mail inviato a {patient}",
-                email_invite_simulated_body: "Gentile paziente, la tua televisita è pronta. Clicca sul seguente link per unirti alla videoconferenza: <br><a href='{url}' target='_blank' class='btn btn-sm btn-primary mt-2 text-white'><i class='bi bi-box-arrow-up-right me-1'></i>Accedi alla Televisita</a><br><br><small class='text-muted'>Link diretto: {url}</small>",
+                email_invite_simulated_body: "Gentile paziente, la tua televisita è pronta. Clicca sul seguente link per unirti alla videoconferenza: <br><a href='{url}' target='_blank' class='btn btn-sm btn-primary mt-2 text-white'><i class='bi bi-box-arrow-up-right me-1'></i>Accedi alla Televisita</a>",
                 toast_invite_sent: "Link di invito Jitsi inviato al paziente via e-mail.",
                 toast_mqtt_connected: "🟢 Connesso al canale: {room}",
                 toast_consent_sent: "Consenso inviato al paziente via e-mail.",
@@ -2454,7 +2454,7 @@
                 patient_otp_invalid: "Code OTP incorrect. Veuillez réessayer.",
                 patient_consent_signed_success: "Consentement signé avec succès ! Vous pouvez fermer cette page.",
                 email_invite_simulated_title: "Invitation e-mail envoyée à {patient}",
-                email_invite_simulated_body: "Cher patient, votre télévisite est prête. Cliquez sur le lien suivant pour rejoindre la visioconférence : <br><a href='{url}' target='_blank' class='btn btn-sm btn-primary mt-2 text-white'><i class='bi bi-box-arrow-up-right me-1'></i>Accéder à la Télévisite</a><br><br><small class='text-muted'>Lien direct : {url}</small>",
+                email_invite_simulated_body: "Cher patient, votre télévisite est prête. Cliquez sur le lien suivant pour rejoindre la visioconférence : <br><a href='{url}' target='_blank' class='btn btn-sm btn-primary mt-2 text-white'><i class='bi bi-box-arrow-up-right me-1'></i>Accéder à la Télévisite</a>",
                 toast_invite_sent: "Lien d'invitation Jitsi envoyé au patient par e-mail.",
                 toast_mqtt_connected: "🟢 Connecté au canal : {room}",
                 toast_consent_sent: "Consentement envoyé au patient par e-mail.",
@@ -3724,7 +3724,10 @@
 
             if (emailJsConfig && emailJsConfig.serviceId && emailJsConfig.templateId && emailJsConfig.publicKey) {
                 console.log('Sending real email via EmailJS...', email);
-                const cleanBody = body.replace(/<[^>]*>/g, '\n').trim();
+                // Il bottone inline (testo+link) viene rimosso del tutto dal testo semplice: nell'e-mail
+                // reale il bottone arriva già separatamente dal template tramite {{action_label}}/{{invite_url}},
+                // altrimenti comparirebbe due volte (una come testo morto, una come vero bottone del template).
+                const cleanBody = body.replace(/<a [^>]*>.*?<\/a>/gi, '').replace(/<[^>]*>/g, '\n').replace(/\n{2,}/g, '\n').trim();
                 // Lo stesso invite_url viene riusato per scopi diversi (consenso, videochiamata):
                 // il testo del bottone nel template deve quindi venire da qui, non essere scritto fisso nel template.
                 const actionLabel = (type === 'consent_locked') ? t('email_action_label_consent')
@@ -4493,8 +4496,8 @@
                     <!-- Top Info Bar -->
                     <div class="d-flex align-items-center justify-content-between px-4 py-2.5 border-bottom border-secondary" style="background:#1e293b; border-color:#334155 !important; flex-shrink: 0;">
                         <div>
-                            <h6 class="fw-bold m-0 text-white" style="font-size:1.05rem;">${d.isUploaded ? d.name : (d.base64Data ? d.name : (isEcg ? 'Elettrocardiogramma a 12 Derivazioni' : 'Radiografia del Torace (RX)'))}</h6>
-                            <small class="text-muted" style="font-size:0.75rem;">Paziente: <span class="text-light">${d.patient}</span> | ${d.isUploaded ? (isPdf ? 'Documento PDF Caricato' : 'Immagine Diagnostica Caricata') : (d.base64Data ? (isPdf ? 'Documento PDF Caricato' : 'Immagine Diagnostica Caricata') : 'Sistema PACS Ospedaliero')}</small>
+                            <h6 class="fw-bold m-0 text-white" style="font-size:1.05rem;">${d.isUploaded ? d.name : (d.base64Data ? d.name : (isEcg ? (currentLang === 'fr' ? 'Électrocardiogramme à 12 Dérivations' : 'Elettrocardiogramma a 12 Derivazioni') : (currentLang === 'fr' ? 'Radiographie Thoracique (RX)' : 'Radiografia del Torace (RX)')))}</h6>
+                            <small class="text-muted" style="font-size:0.75rem;">${currentLang === 'fr' ? 'Patient' : 'Paziente'}: <span class="text-light">${d.patient}</span> | ${d.isUploaded ? (isPdf ? (currentLang === 'fr' ? 'Document PDF Chargé' : 'Documento PDF Caricato') : (currentLang === 'fr' ? 'Image Diagnostique Chargée' : 'Immagine Diagnostica Caricata')) : (d.base64Data ? (isPdf ? (currentLang === 'fr' ? 'Document PDF Chargé' : 'Documento PDF Caricato') : (currentLang === 'fr' ? 'Image Diagnostique Chargée' : 'Immagine Diagnostica Caricata')) : (currentLang === 'fr' ? 'Système PACS Hospitalier' : 'Sistema PACS Ospedaliero'))}</small>
                         </div>
                         <div class="d-flex align-items-center gap-3">
                             <!-- Stato della Sincronizzazione -->
@@ -4502,7 +4505,7 @@
                                 🟢 LIVE SYNC: <span id="collab-topic-code" class="text-white">...</span>
                             </div>
                             <button class="btn btn-primary btn-sm fw-semibold" id="btn-collab-toggle" onclick="toggleCollaboration('${d.id}')" style="font-size: 0.78rem; padding: 0.35rem 0.8rem;">
-                                <i class="bi bi-pencil-fill me-1"></i> <span id="collab-toggle-text">Attiva Lavagna Collaborativa</span>
+                                <i class="bi bi-pencil-fill me-1"></i> <span id="collab-toggle-text">${currentLang === 'fr' ? 'Activer le Tableau Collaboratif' : 'Attiva Lavagna Collaborativa'}</span>
                             </button>
                         </div>
                     </div>
@@ -4517,7 +4520,7 @@
                                         <div id="pdf-pages-container" class="w-100 d-flex flex-column align-items-center" style="background:white;">
                                             <div class="d-flex flex-column align-items-center justify-content-center w-100 text-muted py-5">
                                                 <div class="spinner-border text-primary mb-2" role="status"></div>
-                                                <span style="font-size:0.8rem;">Caricamento pagine PDF...</span>
+                                                <span style="font-size:0.8rem;">${currentLang === 'fr' ? 'Chargement des pages PDF...' : 'Caricamento pagine PDF...'}</span>
                                             </div>
                                         </div>
                                     ` : `
@@ -4527,8 +4530,8 @@
                                     d.isUploaded ? `
                                         <div class="d-flex flex-column align-items-center justify-content-center w-100 h-100 text-white p-5" style="min-height: 400px; background: #0f172a;">
                                             <div class="spinner-border text-warning mb-3" role="status" style="width: 2.5rem; height: 2.5rem;"></div>
-                                            <h5 class="fw-bold mb-1">Ricezione file in corso...</h5>
-                                            <p class="text-muted small text-center mb-3">Il documento è in fase di trasferimento dall'altro medico.<br>Attendi il completamento del download.</p>
+                                            <h5 class="fw-bold mb-1">${currentLang === 'fr' ? 'Réception du fichier en cours...' : 'Ricezione file in corso...'}</h5>
+                                            <p class="text-muted small text-center mb-3">${currentLang === 'fr' ? 'Le document est en cours de transfert depuis l\'autre médecin.<br>Veuillez attendre la fin du téléchargement.' : 'Il documento è in fase di trasferimento dall\'altro medico.<br>Attendi il completamento del download.'}</p>
                                             <div class="progress" style="width: 250px; height: 8px; background-color: #334155; border-radius: 4px;">
                                                 <div id="collab-download-progress" class="progress-bar bg-warning progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
                                             </div>
@@ -4569,31 +4572,31 @@
                     <div class="px-4 py-2.5 border-top border-secondary d-flex align-items-center justify-content-between text-white" style="background:#1e293b; border-color:#334155 !important; flex-shrink: 0; font-size: 0.82rem;">
                         <div>
                             ${d.base64Data ? `
-                                <span class="fw-bold text-muted">File:</span> ${d.size} · Caricato da <span class="text-light">${DOCTORS[d.by]?.name || d.by}</span>
+                                <span class="fw-bold text-muted">File:</span> ${d.size} · ${currentLang === 'fr' ? 'Chargé par' : 'Caricato da'} <span class="text-light">${DOCTORS[d.by]?.name || d.by}</span>
                             ` : `
-                                <span class="fw-bold text-muted">Valutazione:</span> ${isEcg ? 'Ritmo sinusale regolare. Conduzione normale.' : 'Campi polmonari liberi. Seni costofrenici pervi.'}
+                                <span class="fw-bold text-muted">${currentLang === 'fr' ? 'Évaluation' : 'Valutazione'}:</span> ${isEcg ? (currentLang === 'fr' ? 'Rythme sinusal régulier. Conduction normale.' : 'Ritmo sinusale regolare. Conduzione normale.') : (currentLang === 'fr' ? 'Champs pulmonaires libres. Sinus costo-phréniques libres.' : 'Campi polmonari liberi. Seni costofrenici pervi.')}
                             `}
                         </div>
  
                         <!-- Barra degli strumenti di disegno in linea -->
                         <div id="collab-toolbar" class="d-flex align-items-center gap-3 px-3 py-1 rounded" style="display: none !important; background: #0f172a; border: 1px solid #334155;">
                             <div class="d-flex align-items-center gap-2">
-                                <span class="text-muted fw-semibold" style="font-size:0.75rem;">Colore:</span>
-                                <button class="btn btn-sm rounded-circle p-0" onclick="setCollabColor('#ef4444')" style="width:20px; height:20px; background-color:#ef4444; border: 2px solid white; box-shadow: 0 0 3px rgba(0,0,0,0.5);" title="Rosso"></button>
-                                <button class="btn btn-sm rounded-circle p-0" onclick="setCollabColor('#fbbf24')" style="width:20px; height:20px; background-color:#fbbf24; border: 2px solid white; box-shadow: 0 0 3px rgba(0,0,0,0.5);" title="Giallo"></button>
-                                <button class="btn btn-sm rounded-circle p-0" onclick="setCollabColor('#22c55e')" style="width:20px; height:20px; background-color:#22c55e; border: 2px solid white; box-shadow: 0 0 3px rgba(0,0,0,0.5);" title="Verde"></button>
-                                <button class="btn btn-sm rounded-circle p-0" onclick="setCollabColor('#3b82f6')" style="width:20px; height:20px; background-color:#3b82f6; border: 2px solid white; box-shadow: 0 0 3px rgba(0,0,0,0.5);" title="Blu"></button>
+                                <span class="text-muted fw-semibold" style="font-size:0.75rem;">${currentLang === 'fr' ? 'Couleur' : 'Colore'}:</span>
+                                <button class="btn btn-sm rounded-circle p-0" onclick="setCollabColor('#ef4444')" style="width:20px; height:20px; background-color:#ef4444; border: 2px solid white; box-shadow: 0 0 3px rgba(0,0,0,0.5);" title="${currentLang === 'fr' ? 'Rouge' : 'Rosso'}"></button>
+                                <button class="btn btn-sm rounded-circle p-0" onclick="setCollabColor('#fbbf24')" style="width:20px; height:20px; background-color:#fbbf24; border: 2px solid white; box-shadow: 0 0 3px rgba(0,0,0,0.5);" title="${currentLang === 'fr' ? 'Jaune' : 'Giallo'}"></button>
+                                <button class="btn btn-sm rounded-circle p-0" onclick="setCollabColor('#22c55e')" style="width:20px; height:20px; background-color:#22c55e; border: 2px solid white; box-shadow: 0 0 3px rgba(0,0,0,0.5);" title="${currentLang === 'fr' ? 'Vert' : 'Verde'}"></button>
+                                <button class="btn btn-sm rounded-circle p-0" onclick="setCollabColor('#3b82f6')" style="width:20px; height:20px; background-color:#3b82f6; border: 2px solid white; box-shadow: 0 0 3px rgba(0,0,0,0.5);" title="${currentLang === 'fr' ? 'Bleu' : 'Blu'}"></button>
                             </div>
                             <div class="d-flex align-items-center gap-2">
-                                <span class="text-muted fw-semibold" style="font-size:0.75rem;">Tratto:</span>
+                                <span class="text-muted fw-semibold" style="font-size:0.75rem;">${currentLang === 'fr' ? 'Épaisseur' : 'Tratto'}:</span>
                                 <select id="collab-width-select" class="form-select form-select-sm py-0.5 px-2 bg-dark text-white border-secondary" onchange="collabWidth = parseInt(this.value)" style="width:75px; font-size:0.72rem;">
-                                    <option value="2">Fine</option>
-                                    <option value="4" selected>Medio</option>
-                                    <option value="8">Spesso</option>
+                                    <option value="2">${currentLang === 'fr' ? 'Fin' : 'Fine'}</option>
+                                    <option value="4" selected>${currentLang === 'fr' ? 'Moyen' : 'Medio'}</option>
+                                    <option value="8">${currentLang === 'fr' ? 'Épais' : 'Spesso'}</option>
                                 </select>
                             </div>
                             <button class="btn btn-danger btn-sm px-2.5 py-0.5 fw-bold" onclick="clearCollabBoard(true)" style="font-size:0.72rem;">
-                                <i class="bi bi-trash3-fill me-1"></i> Pulisci
+                                <i class="bi bi-trash3-fill me-1"></i> ${currentLang === 'fr' ? 'Effacer' : 'Pulisci'}
                             </button>
                             <div class="d-flex align-items-center gap-2 border-start border-secondary ps-3 ms-1">
                                 <span class="text-muted fw-semibold" style="font-size:0.75rem;">Zoom:</span>
@@ -4607,13 +4610,13 @@
                         <div class="d-flex align-items-center gap-2">
                             ${d.base64Data ? `
                                 <button class="btn btn-outline-info btn-sm fw-semibold" onclick="downloadDoc('${d.id}')" style="font-size:0.75rem; padding: 0.3rem 0.65rem;">
-                                    <i class="bi bi-download me-1"></i> Scarica Originale
+                                    <i class="bi bi-download me-1"></i> ${currentLang === 'fr' ? 'Télécharger l\'Original' : 'Scarica Originale'}
                                 </button>
                             ` : ''}
                             <button class="btn btn-outline-warning btn-sm fw-semibold" onclick="downloadAnnotatedDoc('${d.id}')" style="font-size:0.75rem; padding: 0.3rem 0.65rem;">
-                                <i class="bi bi-pencil-square me-1"></i> Scarica con Annotazioni
+                                <i class="bi bi-pencil-square me-1"></i> ${currentLang === 'fr' ? 'Télécharger avec Annotations' : 'Scarica con Annotazioni'}
                             </button>
-                            <button type="button" class="btn btn-secondary btn-sm fw-semibold" data-bs-dismiss="modal" style="font-size:0.75rem; padding: 0.3rem 0.65rem;">Chiudi</button>
+                            <button type="button" class="btn btn-secondary btn-sm fw-semibold" data-bs-dismiss="modal" style="font-size:0.75rem; padding: 0.3rem 0.65rem;">${currentLang === 'fr' ? 'Fermer' : 'Chiudi'}</button>
                         </div>
                     </div>
                 </div>`;
@@ -4921,7 +4924,7 @@
 
         function setCollabColor(color) {
             collabColor = color;
-            showToast('Colore lavagna impostato: ' + color, 'info');
+            showToast((currentLang === 'fr' ? 'Couleur du tableau définie : ' : 'Colore lavagna impostato: ') + color, 'info');
         }
 
         function toggleCollaboration(docId) {
@@ -4942,7 +4945,7 @@
                     const topicCodeSpan = document.getElementById('collab-topic-code');
                     if (topicCodeSpan) topicCodeSpan.textContent = currentGroupCode;
                 }
-                if (toggleText) toggleText.textContent = 'Disattiva Lavagna Collaborativa';
+                if (toggleText) toggleText.textContent = currentLang === 'fr' ? 'Désactiver le Tableau Collaboratif' : 'Disattiva Lavagna Collaborativa';
                 if (toggleBtn) {
                     toggleBtn.className = 'btn btn-danger btn-sm fw-semibold';
                 }
@@ -4969,7 +4972,7 @@
                 if (canvas) canvas.style.display = 'none';
                 if (toolbar) toolbar.style.setProperty('display', 'none', 'important');
                 if (statusDiv) statusDiv.style.display = 'none';
-                if (toggleText) toggleText.textContent = 'Attiva Lavagna Collaborativa';
+                if (toggleText) toggleText.textContent = currentLang === 'fr' ? 'Activer le Tableau Collaboratif' : 'Attiva Lavagna Collaborativa';
                 if (toggleBtn) {
                     toggleBtn.className = 'btn btn-primary btn-sm fw-semibold';
                 }
@@ -5021,7 +5024,7 @@
                     if (canvas) canvas.style.display = 'none';
                     if (toolbar) toolbar.style.setProperty('display', 'none', 'important');
                     if (statusDiv) statusDiv.style.display = 'none';
-                    if (toggleText) toggleText.textContent = 'Attiva Lavagna Collaborativa';
+                    if (toggleText) toggleText.textContent = currentLang === 'fr' ? 'Activer le Tableau Collaboratif' : 'Attiva Lavagna Collaborativa';
                     if (toggleBtn) {
                         toggleBtn.className = 'btn btn-primary btn-sm fw-semibold';
                     }
