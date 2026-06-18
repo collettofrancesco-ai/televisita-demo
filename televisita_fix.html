@@ -764,6 +764,27 @@
                 height: 300px;
             }
         }
+
+        /* Stampa/"Salva come PDF" del referto dalla pagina pubblica del paziente: isola il
+           foglio bianco del referto, nascondendo sfondo colorato e bottoni dell'interfaccia. */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #patient-report-print-area,
+            #patient-report-print-area * {
+                visibility: visible;
+            }
+            #patient-report-print-area {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
     </style>
 </head>
 
@@ -804,6 +825,20 @@
                     <i class="bi bi-exclamation-triangle-fill fs-2 d-block mb-2"></i>
                     <span id="patient-consent-expired-text"></span>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vista pubblica per il paziente: referto firmato, apertura diretta dal link via e-mail -->
+    <div id="patient-report-overlay"
+        style="display:none; position:fixed; inset:0; z-index:9000; background:linear-gradient(135deg, rgba(13, 71, 161, 0.85) 0%, rgba(21, 101, 192, 0.8) 50%, rgba(0, 121, 107, 0.85) 100%); overflow-y:auto;">
+        <div class="d-flex flex-column align-items-center" style="min-height:100vh; padding:2rem 1rem;">
+            <div id="patient-report-print-area" style="max-width:760px; width:100%;"></div>
+            <div class="mt-3 d-flex flex-column align-items-center gap-2 no-print">
+                <button class="btn btn-light fw-bold px-4 py-2 shadow-sm" id="patient-report-download-btn" onclick="window.print()">
+                    <i class="bi bi-download me-1"></i><span id="patient-report-download-btn-text"></span>
+                </button>
+                <small class="text-white-50" id="patient-report-close-note"></small>
             </div>
         </div>
     </div>
@@ -2226,6 +2261,9 @@
                 email_subject_invite: "Collegamento Videoconferenza Televisita",
                 email_action_label_consent: "Visualizza e firma consenso",
                 email_action_label_invite: "Entra in Videochiamata",
+                email_action_label_referto: "Visualizza e scarica referto",
+                patient_report_download_btn: "Scarica Referto",
+                patient_report_close_note: "Puoi chiudere questa pagina dopo aver scaricato il referto.",
                 btn_view: "Visualizza",
                 pdf_consent_title: "Consenso_Televisita.pdf",
                 pdf_consent_doc_title: "Consenso alla TeleVisita e al trattamento dei dati personali",
@@ -2475,6 +2513,9 @@
                 email_subject_invite: "Lien de Visioconférence Télévisite",
                 email_action_label_consent: "Consulter et signer le consentement",
                 email_action_label_invite: "Rejoindre la Vidéoconférence",
+                email_action_label_referto: "Visualiser et télécharger le rapport",
+                patient_report_download_btn: "Télécharger le Rapport",
+                patient_report_close_note: "Vous pouvez fermer cette page après avoir téléchargé le rapport.",
                 btn_view: "Visualiser",
                 pdf_consent_title: "Consentement_Televisite.pdf",
                 pdf_consent_doc_title: "Consentement à la Télévisite et au traitement des données personnelles",
@@ -3734,6 +3775,7 @@
                 // il testo del bottone nel template deve quindi venire da qui, non essere scritto fisso nel template.
                 const actionLabel = (type === 'consent_locked') ? t('email_action_label_consent')
                     : (type === 'invite' || type === 'call_invite') ? t('email_action_label_invite')
+                    : (type === 'referto_disponibile') ? t('email_action_label_referto')
                     : '';
                 const templateParams = {
                     to_email: patientEmail,
@@ -3938,6 +3980,28 @@
             if (emailJsConfig && emailJsConfig.publicKey) params.set('pk', emailJsConfig.publicKey);
             if (emailJsConfig && emailJsConfig.serviceId) params.set('sid', emailJsConfig.serviceId);
             if (emailJsConfig && emailJsConfig.templateId) params.set('tid', emailJsConfig.templateId);
+            return `${base}?${params.toString()}`;
+        }
+
+        // Costruisce il link pubblico al referto firmato: pagina di sola lettura, niente OTP da
+        // sbloccare. Non porta l'immagine della firma disegnata a mano (potrebbe pesare decine di KB
+        // in base64 e gonfiare troppo l'URL): nel link la firma è rappresentata solo testualmente,
+        // il codice di verifica FEA resta comunque la prova legale del documento.
+        function buildPatientReportUrl(d) {
+            const base = window.location.origin + window.location.pathname;
+            const params = new URLSearchParams({
+                report: '1',
+                docId: d.id,
+                patient: d.patient,
+                dob: d.patientDob || '',
+                pob: d.patientPob || '',
+                cf: d.patientCf || '',
+                doctorName: d.doctorName,
+                at: d.at,
+                diagnosis: d.reportNotes || '',
+                verificationCode: d.verificationCode,
+                lang: currentLang
+            });
             return `${base}?${params.toString()}`;
         }
 
@@ -4166,6 +4230,45 @@
             const acceptBtn = document.getElementById('patient-consent-accept-btn');
             acceptBtn.title = currentLang === 'fr' ? 'Faites défiler le document jusqu\'à la fin pour activer' : 'Scorri il documento fino alla fine per abilitare';
             gateButtonUntilScrolledToEnd(document.getElementById('patient-consent-body'), acceptBtn);
+        }
+
+        // ---------------------------------------------------------------------------
+        // VISTA PUBBLICA PAZIENTE: REFERTO FIRMATO (sola lettura, niente OTP)
+        // Aperta dal link incluso nell'e-mail "referto disponibile". Usa lo stesso
+        // buildReportCardHtml() dell'anteprima nel cruscotto, così il paziente vede
+        // esattamente lo stesso documento "timbrato" visto dal medico.
+        // ---------------------------------------------------------------------------
+        function isPatientReportMode() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('report') === '1' && !!params.get('docId');
+        }
+
+        function initPatientReportView() {
+            const params = new URLSearchParams(window.location.search);
+            const lang = params.get('lang');
+            if (lang && LANGS[lang]) currentLang = lang;
+
+            const d = {
+                id: params.get('docId'),
+                patient: params.get('patient') || '',
+                patientDob: params.get('dob') || '',
+                patientPob: params.get('pob') || '',
+                patientCf: params.get('cf') || '',
+                doctorName: params.get('doctorName') || '',
+                at: params.get('at') || '',
+                reportNotes: params.get('diagnosis') || '',
+                verificationCode: params.get('verificationCode') || ''
+            };
+
+            const signatureHtml = `
+                <div class="fw-semibold text-primary" style="font-size:0.85rem;">${d.doctorName}</div>
+                <div class="text-success" style="font-size:0.62rem;"><i class="bi bi-patch-check-fill me-1"></i>${currentLang === 'fr' ? 'Signature vérifiée' : 'Firma verificata'}</div>
+            `;
+
+            document.getElementById('patient-report-print-area').innerHTML = buildReportCardHtml(d, signatureHtml);
+            document.getElementById('patient-report-download-btn-text').textContent = t('patient_report_download_btn');
+            document.getElementById('patient-report-close-note').textContent = t('patient_report_close_note');
+            document.getElementById('patient-report-overlay').style.display = 'block';
         }
 
         // Connessione MQTT "usa e getta": pubblica un singolo messaggio e si disconnette.
@@ -4554,6 +4657,72 @@
 
         let ecgAnimId = null;
 
+        // Markup del referto firmato: condiviso tra l'anteprima del medico (viewDocPreview)
+        // e la pagina pubblica del paziente (initPatientReportView), così restano sempre
+        // visivamente identici. signatureHtml differisce: firma vera nell'anteprima del medico,
+        // testo "firmato elettronicamente da" nella pagina pubblica (niente immagini nell'URL).
+        function buildReportCardHtml(d, signatureHtml) {
+            const dob = d.patientDob || '';
+            const pob = d.patientPob || '';
+            const cf = d.patientCf || '';
+            return `
+                <div class="bg-white p-4 shadow-sm rounded border" style="font-family: 'Inter', system-ui, sans-serif; color: #1e293b; max-width:760px; width:100%; font-size:0.82rem; margin:0 auto;">
+                    <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                        <div>
+                            <h6 class="fw-bold m-0 text-primary" style="font-size:0.95rem; letter-spacing: 0.5px;"><i class="bi bi-hospital me-1"></i>oloHealth Televisita</h6>
+                            <small class="text-muted" style="font-size:0.68rem;">Olomedia S.R.L</small>
+                        </div>
+                        <div class="text-end" style="font-size:0.65rem; line-height:1.2;">
+                            <strong>Codice Doc:</strong> <span class="font-monospace">${d.id}</span><br>
+                            <strong>Data:</strong> ${d.at}
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-3 p-2 rounded bg-light border text-dark" style="font-size:0.75rem; line-height:1.35;">
+                        <div class="col-6">
+                            <span class="text-muted small">MEDICO REFERTANTE</span><br>
+                            <strong>${d.doctorName}</strong><br>
+                            <span class="text-secondary">Cod. Reg. Med: 823901/AM</span>
+                        </div>
+                        <div class="col-6 border-start ps-3">
+                            <span class="text-muted small">PAZIENTE</span><br>
+                            <strong>${d.patient}</strong><br>
+                            ${dob || pob ? `
+                                <span class="text-secondary" style="font-size:0.7rem;">
+                                    ${currentLang === 'fr' ? 'Né le' : 'Nato il'}: ${dob ? fmtDate(dob) : '--'} ${currentLang === 'fr' ? 'à' : 'a'} ${pob || '--'}
+                                </span><br>
+                            ` : ''}
+                            <span class="text-secondary">${cf && /^\d{8}$/.test(cf) ? 'CIN' : (currentLang === 'fr' ? 'Code Fiscal' : 'Codice Fiscale')}: ${cf}</span>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <h6 class="fw-bold text-dark border-bottom pb-1" style="font-size:0.8rem;"><i class="bi bi-file-earmark-text-fill text-secondary me-1"></i>VALUTAZIONE CLINICA E DIAGNOSI</h6>
+                        <div class="p-3 bg-white border rounded text-dark" style="white-space: pre-wrap; min-height: 100px; line-height: 1.45; font-size: 0.78rem; border-color: #e2e8f0;">${d.reportNotes}</div>
+                    </div>
+
+                    <div class="p-3 rounded border bg-success-subtle d-flex align-items-start gap-3" style="border-color: #a7f3d0 !important;">
+                        <i class="bi bi-shield-fill-check text-success fs-3 mt-1"></i>
+                        <div class="flex-grow-1 text-dark" style="font-size:0.72rem; line-height:1.35;">
+                            <div class="fw-bold text-success-emphasis" style="font-size:0.75rem;">FIRMATA DIGITALMENTE (F.E.A.)</div>
+                            <div class="text-success-emphasis mb-2 opacity-85">
+                                Documento firmato elettronicamente tramite Firma Elettronica Avanzata ai sensi del Regolamento UE n. 910/2014 (eIDAS).
+                            </div>
+                            <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 pt-2 border-top border-success-subtle">
+                                <div>
+                                    <strong>Identificativo FEA:</strong> <span class="font-monospace text-secondary">${d.verificationCode}</span><br>
+                                    <strong>Data Apposizione:</strong> ${d.at}
+                                </div>
+                                <div class="text-center bg-white p-2 rounded border" style="min-width: 140px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                                    <div class="text-muted" style="font-size: 0.52rem; text-transform: uppercase;">Firma del Medico</div>
+                                    ${signatureHtml}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
         function viewDocPreview(id) {
             const d = S.docs.find(x => x.id === id);
             if (!d) return;
@@ -4738,70 +4907,13 @@
                     </div>`;
                 }
             } else if (d.isMedicalReport) {
-                const dob = d.patientDob || '';
-                const pob = d.patientPob || '';
-                const cf = d.patientCf || '';
                 const signatureHtml = d.signatureType === 'draw'
                     ? `<img src="${d.signature}" style="max-height: 55px; max-width: 180px; filter: contrast(1.2) brightness(0.9); margin-top:2px;" alt="Firma">`
                     : `<div style="font-family: 'Brush Script MT', 'Charm', cursive; font-size: 1.8rem; color: #1e3a8a; display:inline-block; border-bottom:1px dashed #1e3a8a; padding: 0 8px; margin-top:2px;">${d.signature}</div>`;
- 
+
                 bodyHtml = `
                 <div class="h-100 d-flex align-items-start justify-content-center p-4" style="overflow-y:auto; background:#0f172a;">
-                <div class="bg-white p-4 shadow-sm rounded border" style="font-family: 'Inter', system-ui, sans-serif; color: #1e293b; max-width:760px; width:100%; font-size:0.82rem;">
-                    <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
-                        <div>
-                            <h6 class="fw-bold m-0 text-primary" style="font-size:0.95rem; letter-spacing: 0.5px;"><i class="bi bi-hospital me-1"></i>oloHealth Televisita</h6>
-                            <small class="text-muted" style="font-size:0.68rem;">Olomedia S.R.L</small>
-                        </div>
-                        <div class="text-end" style="font-size:0.65rem; line-height:1.2;">
-                            <strong>Codice Doc:</strong> <span class="font-monospace">${d.id}</span><br>
-                            <strong>Data:</strong> ${d.at}
-                        </div>
-                    </div>
-
-                    <div class="row g-2 mb-3 p-2 rounded bg-light border text-dark" style="font-size:0.75rem; line-height:1.35;">
-                        <div class="col-6">
-                            <span class="text-muted small">MEDICO REFERTANTE</span><br>
-                            <strong>${d.doctorName}</strong><br>
-                            <span class="text-secondary">Cod. Reg. Med: 823901/AM</span>
-                        </div>
-                        <div class="col-6 border-start ps-3">
-                            <span class="text-muted small">PAZIENTE</span><br>
-                            <strong>${d.patient}</strong><br>
-                            ${dob || pob ? `
-                                <span class="text-secondary" style="font-size:0.7rem;">
-                                    ${currentLang === 'fr' ? 'Né le' : 'Nato il'}: ${dob ? fmtDate(dob) : '--'} ${currentLang === 'fr' ? 'à' : 'a'} ${pob || '--'}
-                                </span><br>
-                            ` : ''}
-                            <span class="text-secondary">${cf && /^\d{8}$/.test(cf) ? 'CIN' : (currentLang === 'fr' ? 'Code Fiscal' : 'Codice Fiscale')}: ${cf}</span>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <h6 class="fw-bold text-dark border-bottom pb-1" style="font-size:0.8rem;"><i class="bi bi-file-earmark-text-fill text-secondary me-1"></i>VALUTAZIONE CLINICA E DIAGNOSI</h6>
-                        <div class="p-3 bg-white border rounded text-dark" style="white-space: pre-wrap; min-height: 100px; line-height: 1.45; font-size: 0.78rem; border-color: #e2e8f0;">${d.reportNotes}</div>
-                    </div>
-
-                    <div class="p-3 rounded border bg-success-subtle d-flex align-items-start gap-3" style="border-color: #a7f3d0 !important;">
-                        <i class="bi bi-shield-fill-check text-success fs-3 mt-1"></i>
-                        <div class="flex-grow-1 text-dark" style="font-size:0.72rem; line-height:1.35;">
-                            <div class="fw-bold text-success-emphasis" style="font-size:0.75rem;">FIRMATA DIGITALMENTE (F.E.A.)</div>
-                            <div class="text-success-emphasis mb-2 opacity-85">
-                                Documento firmato elettronicamente tramite Firma Elettronica Avanzata ai sensi del Regolamento UE n. 910/2014 (eIDAS).
-                            </div>
-                            <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 pt-2 border-top border-success-subtle">
-                                <div>
-                                    <strong>Identificativo FEA:</strong> <span class="font-monospace text-secondary">${d.verificationCode}</span><br>
-                                    <strong>Data Apposizione:</strong> ${d.at}
-                                </div>
-                                <div class="text-center bg-white p-2 rounded border" style="min-width: 140px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                                    <div class="text-muted" style="font-size: 0.52rem; text-transform: uppercase;">Firma del Medico</div>
-                                    ${signatureHtml}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                    ${buildReportCardHtml(d, signatureHtml)}
                 </div>`;
             } else if (category === 'consenso') {
                 bodyHtml = `
@@ -7097,7 +7209,9 @@
             if (!S.docs) S.docs = [];
             S.docs.unshift(newDoc);
 
-            // Genera l'email simulata al paziente per notificarlo del referto
+            // Genera l'email al paziente per notificarlo del referto, con link reale al
+            // documento (stesso meccanismo del link di consenso e di invito alla videochiamata).
+            const reportUrl = buildPatientReportUrl(newDoc);
             addSimulatedEmail({
                 type: 'referto_disponibile',
                 patientName: tv.patient,
@@ -7106,9 +7220,10 @@
                     ? `Nouveau rapport médical disponible - Télévisite du ${tv.date}`
                     : `Nuovo referto medico disponibile - Televisita del ${tv.date}`,
                 body: currentLang === 'fr'
-                    ? `<p>Bonjour <strong>${tv.patient}</strong>,</p><p>Le <strong>${newDoc.doctorName}</strong> a signé et publié le rapport médical de votre télévisite.</p><p>Vous pouvez le consulter et le télécharger directement depuis votre espace personnel dans la section "Documents Partagés".</p>`
-                    : `<p>Gentile <strong>${tv.patient}</strong>,</p><p>Il <strong>${newDoc.doctorName}</strong> ha firmato e caricato il referto clinico relativo alla televisita effettuata.</p><p>Puoi visualizzare e scaricare il documento direttamente dalla tua area riservata nella sezione "Documenti Condivisi".</p>`,
-                tvId: tv.id
+                    ? `<p>Bonjour <strong>${tv.patient}</strong>,</p><p>Le <strong>${newDoc.doctorName}</strong> a signé et publié le rapport médical de votre télévisite.</p><p>Vous pouvez le consulter et le télécharger directement en cliquant sur le lien ci-dessous :</p><a href='${reportUrl}' target='_blank' class='btn btn-sm btn-primary mt-2 text-white'><i class='bi bi-box-arrow-up-right me-1'></i>${t('email_action_label_referto')}</a>`
+                    : `<p>Gentile <strong>${tv.patient}</strong>,</p><p>Il <strong>${newDoc.doctorName}</strong> ha firmato e caricato il referto clinico relativo alla televisita effettuata.</p><p>Puoi visualizzarlo e scaricarlo cliccando sul link qui sotto:</p><a href='${reportUrl}' target='_blank' class='btn btn-sm btn-primary mt-2 text-white'><i class='bi bi-box-arrow-up-right me-1'></i>${t('email_action_label_referto')}</a>`,
+                tvId: tv.id,
+                inviteUrl: reportUrl
             });
 
             // Chiudi il modal
@@ -7773,6 +7888,13 @@
             if (isPatientConsentMode()) {
                 document.getElementById('login-overlay').style.display = 'none';
                 initPatientConsentView();
+                return;
+            }
+
+            // Vista pubblica paziente: referto firmato (sola lettura)
+            if (isPatientReportMode()) {
+                document.getElementById('login-overlay').style.display = 'none';
+                initPatientReportView();
                 return;
             }
 
