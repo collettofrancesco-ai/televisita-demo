@@ -3109,7 +3109,12 @@
             (incomingList || []).forEach(incomingItem => {
                 const idx = merged.findIndex(item => item.id === incomingItem.id);
                 if (idx === -1) {
-                    merged.push(incomingItem);
+                    // In cima, non in fondo: è così che ogni nuovo elemento viene già aggiunto
+                    // in locale (vedi unshift sulle televisite/email appena create). Se un
+                    // elemento nuovo arriva da una sincronizzazione e viene messo in fondo, il
+                    // medico dell'altra struttura lo trova in fondo alla lista invece che in
+                    // cima, dovendo scorrere per vedere la nuova richiesta.
+                    merged.unshift(incomingItem);
                 } else {
                     merged[idx] = incomingItem;
                 }
