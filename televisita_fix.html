@@ -1445,16 +1445,6 @@
                                     Videoconferenza Attiva</p>
                                 <p class="small text-muted mb-0" data-i18n="video_placeholder_text">La conferenza si
                                     avvierà quando una televisita viene accettata.</p>
-                                <div class="mt-4 pt-3 border-top w-100" style="max-width: 340px; margin: 0 auto;">
-                                    <p class="small text-muted mb-2" data-i18n="video_placeholder_manual">Oppure
-                                        inserisci il nome di una stanza esistente per partecipare da un altro PC:</p>
-                                    <div class="input-group input-group-sm">
-                                        <input type="text" id="manual-room-input" class="form-control"
-                                            placeholder="es. televisita-mq9w9fla-bxfl">
-                                        <button class="btn btn-primary" onclick="joinManualRoom()"
-                                            data-i18n="btn_join">Partecipa</button>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                         <!-- Layout split-screen per la televisita attiva -->
@@ -2102,8 +2092,6 @@
                 btn_end_call: "Termina",
                 video_placeholder_title: "Nessuna Videoconferenza Attiva",
                 video_placeholder_text: "La conferenza si avvierà quando una televisita viene accettata.",
-                video_placeholder_manual: "Oppure inserisci il nome di una stanza esistente per partecipare da un altro PC:",
-                btn_join: "Partecipa",
                 card_session_title: "Stato Sessione",
                 card_docs_title: "Documenti Clinici",
                 card_docs_sub: "Condivisi tra le strutture",
@@ -2349,8 +2337,6 @@
                 btn_end_call: "Terminer",
                 video_placeholder_title: "Aucune Visioconférence Active",
                 video_placeholder_text: "La conférence démarrera dès qu'une télévisite sera acceptée.",
-                video_placeholder_manual: "Ou entrez le nom d'une salle existante pour rejoindre depuis un autre PC :",
-                btn_join: "Rejoindre",
                 card_session_title: "État de la Session",
                 card_docs_title: "Documents Cliniques",
                 card_docs_sub: "Partagés entre les établissements",
@@ -3644,18 +3630,11 @@
                 return '';
             }
 
-            if (tv.type === 'urgente') {
-                return `
-                <div class="consent-box p-2 rounded mb-3" style="background:#e8f5e9; border: 1px solid #c8e6c9; font-size: 0.8rem;">
-                    <div class="d-flex align-items-center gap-1">
-                        <i class="bi bi-shield-fill-check text-success" style="font-size: 0.95rem;"></i>
-                        <span class="fw-semibold text-success-emphasis">${t('consent_section_title')}:</span>
-                        <span class="badge bg-success" style="font-size:0.7rem;">${t('consent_status_firmato')}</span>
-                        <small class="text-muted ms-1">(Emergenza/Urgente)</small>
-                    </div>
-                </div>
-                `;
-            }
+            // Le televisite urgenti hanno il consenso già firmato in automatico alla creazione
+            // (per non far attendere l'urgenza), ma il testo e l'aspetto del riquadro "Consenso
+            // Paziente" restano identici a quelli di una visita programmata: nessuna etichetta
+            // speciale "Emergenza/Urgente", nessuna differenza visiva. Cade quindi nella stessa
+            // logica generica qui sotto, che mostrerà semplicemente "Firmato".
 
             const consentStatus = tv.consentStatus || 'non-inviato';
             let badgeClass = 'bg-secondary';
@@ -4513,9 +4492,15 @@
                             <div id="collab-sync-status" class="px-2.5 py-1 rounded text-success fw-bold font-monospace" style="display:none; font-size:0.75rem; background:#0f172a; border: 1px solid #10b981;">
                                 🟢 LIVE SYNC: <span id="collab-topic-code" class="text-white">...</span>
                             </div>
+                            ${d.shared === true ? `
                             <button class="btn btn-primary btn-sm fw-semibold" id="btn-collab-toggle" onclick="toggleCollaboration('${d.id}')" style="font-size: 0.78rem; padding: 0.35rem 0.8rem;">
                                 <i class="bi bi-pencil-fill me-1"></i> <span id="collab-toggle-text">${currentLang === 'fr' ? 'Activer le Tableau Collaboratif' : 'Attiva Lavagna Collaborativa'}</span>
                             </button>
+                            ` : `
+                            <button class="btn btn-secondary btn-sm fw-semibold" disabled title="${currentLang === 'fr' ? 'Partagez d\'abord le document avec l\'autre établissement pour activer le tableau collaboratif' : 'Condividi prima il documento con l\'altra struttura per attivare la lavagna collaborativa'}" style="font-size: 0.78rem; padding: 0.35rem 0.8rem; opacity:0.7; cursor:not-allowed;">
+                                <i class="bi bi-pencil-fill me-1"></i> ${currentLang === 'fr' ? 'Partagez d\'abord le document' : 'Condividi prima il documento'}
+                            </button>
+                            `}
                         </div>
                     </div>
                     
@@ -4997,6 +4982,15 @@
             const toggleBtn = document.getElementById('btn-collab-toggle');
 
             if (!isCollaborating) {
+                // Non si può collaborare su un documento non ancora condiviso: l'altra
+                // struttura non lo vedrebbe nemmeno, quindi la lavagna non avrebbe senso.
+                const docToCollab = S.docs.find(x => x.id === docId);
+                if (!docToCollab || docToCollab.shared !== true) {
+                    showToast(currentLang === 'fr'
+                        ? 'Partagez d\'abord le document avec l\'autre établissement.'
+                        : 'Condividi prima il documento con l\'altra struttura.', 'warning');
+                    return;
+                }
                 // Attiva collaborazione
                 isCollaborating = true;
                 activeCollabDocId = docId;
@@ -6833,24 +6827,6 @@
             if (S.immReq === 'accepted') { S.immReq = 'in-corso'; renderImm(); syncState({ kind: 'call_started', room }); }
             if (!S.jitsiApi) launchJitsi(room);
             scrollToVideo();
-        }
-
-        function joinManualRoom() {
-            const val = document.getElementById('manual-room-input').value.trim();
-            if (!val) return;
-
-            // Cerca se esiste una televisita programmata associata a questa stanza
-            const matchingTv = S.televisite.find(t => t.room === val);
-            if (matchingTv) {
-                S.activeTvId = matchingTv.id;
-            } else {
-                S.activeTvId = null;
-            }
-
-            S.activeRoom = val;
-            document.getElementById('room-label').textContent = t('room_lbl') + val;
-            document.getElementById('btn-end').style.display = '';
-            launchJitsi(val);
         }
 
         function toggleTheme() {
