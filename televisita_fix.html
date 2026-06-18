@@ -1220,7 +1220,7 @@
 
             <div class="col-lg-8">
 
-                <div class="section-card mb-4">
+                <div class="section-card mb-4" id="card-sched-section">
                     <div class="card-header">
                         <div class="card-icon" style="background:#e8f0fe;color:#1565c0;"><i
                                 class="bi bi-calendar-plus-fill"></i></div>
@@ -8014,109 +8014,147 @@
         function runDemo() {
             stopDemo(); // Annulla un'eventuale demo già in corso prima di ripartire da zero
 
-            const TOTAL = 14;
+            const TOTAL = 16;
             const DEMO_PATIENT = 'Maria Esposito';
             const DEMO_NOTES_IT = 'Paziente lucida e collaborante. Riferisce cefalea persistente da 3 giorni, lieve febbre serale. Pressione e saturazione nella norma. Diagnosi: sindrome influenzale. Prescrizione: riposo, paracetamolo 1000mg al bisogno, controllo se i sintomi persistono oltre 5 giorni.';
             const DEMO_NOTES_FR = 'Patiente lucide et coopérative. Signale des céphalées persistantes depuis 3 jours, légère fièvre le soir. Tension et saturation normales. Diagnostic : syndrome grippal. Prescription : repos, paracétamol 1000mg si besoin, contrôle si les symptômes persistent plus de 5 jours.';
+            let demoTvId = null;
 
             scheduleDemo(0, () => {
                 switchRole('struttura1');
                 showDemoGuide(1, TOTAL,
                     'Benvenuto in oloHealth Televisita',
                     'Bienvenue dans oloHealth Televisita',
-                    'Questa demo guidata ti mostra, passo dopo passo e con calma, l\'intero percorso di una televisita: dalla richiesta del medico fino al referto firmato e consegnato al paziente, passando per il consenso informato e la tutela della privacy. Ora sei collegato come medico della <strong>Struttura 1 — Centro Tunisia</strong>.',
-                    'Cette démo guidée vous montre, étape par étape et sans précipitation, tout le parcours d\'une télévisite : de la demande du médecin jusqu\'au rapport signé et remis au patient, en passant par le consentement éclairé et la protection de la vie privée. Vous êtes connecté en tant que médecin de l\'<strong>Établissement 1 — Centro Tunisia</strong>.');
+                    'Questa demo guidata ti mostra, passo dopo passo e con calma, l\'intero percorso di una televisita <strong>normale (non urgente)</strong>: dalla programmazione fino al referto firmato e consegnato al paziente, passando per il vero consenso informato firmato dal paziente con codice OTP. Ora sei collegato come medico della <strong>Struttura 1 — Centro Tunisia</strong>.',
+                    'Cette démo guidée vous montre, étape par étape et sans précipitation, tout le parcours d\'une télévisite <strong>normale (non urgente)</strong> : de la planification jusqu\'au rapport signé et remis au patient, en passant par le véritable consentement éclairé signé par le patient avec un code OTP. Vous êtes connecté en tant que médecin de l\'<strong>Établissement 1 — Centro Tunisia</strong>.');
                 highlightDemoEl('#role-badge');
             });
 
             scheduleDemo(7000, () => {
                 showDemoGuide(2, TOTAL,
-                    'Richiesta di televisita urgente',
-                    'Demande de télévisite urgente',
-                    'Quando un paziente ha bisogno di un consulto immediato, il medico attiva una richiesta urgente: il sistema crea subito la cartella clinica e prepara automaticamente il modulo di consenso informato, perché ogni dato sanitario condiviso tra due strutture diverse richiede prima il consenso esplicito del paziente.',
-                    'Lorsqu\'un patient a besoin d\'une consultation immédiate, le médecin lance une demande urgente : le système crée immédiatement le dossier clinique et prépare automatiquement le formulaire de consentement, car toute donnée de santé partagée entre deux établissements différents nécessite d\'abord le consentement explicite du patient.');
-                highlightDemoEl('#card-imm-section');
+                    'Programmazione di una televisita',
+                    'Planification d\'une télévisite',
+                    'Per una visita non urgente, il medico la programma scegliendo data e ora, e inserendo i dati del paziente. Il sistema preparerà subito il modulo di consenso, ma stavolta NON sarà firmato in automatico: dovrà essere letto e firmato dal paziente stesso.',
+                    'Pour une visite non urgente, le médecin la planifie en choisissant la date et l\'heure, et en saisissant les données du patient. Le système préparera immédiatement le formulaire de consentement, mais cette fois il NE sera PAS signé automatiquement : il devra être lu et signé par le patient lui-même.');
+                highlightDemoEl('#card-sched-section');
             });
 
-            scheduleDemo(14500, () => {
-                requestImmediate(DEMO_PATIENT, 'maria.esposito@example.com', '+39 333 123 4567', '1985-04-12', 'F', 'Palermo', 'CF', '');
+            scheduleDemo(15000, () => {
+                document.getElementById('f-patient').value = DEMO_PATIENT;
+                document.getElementById('f-email').value = 'maria.esposito@example.com';
+                document.getElementById('f-phone').value = '+39 333 123 4567';
+                // Orario randomico per evitare conflitti con eventuali precedenti esecuzioni della demo nella stessa sessione
+                document.getElementById('f-time').value = `${String(10 + Math.floor(Math.random() * 8)).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`;
+                const notesEl = document.getElementById('f-notes');
+                if (notesEl) notesEl.value = currentLang === 'fr' ? 'Contrôle post-opératoire' : 'Controllo post-operatorio';
+                document.getElementById('sched-form').requestSubmit();
+                demoTvId = S.televisite.find(t => t.patient === DEMO_PATIENT)?.id;
                 showDemoGuide(3, TOTAL,
-                    'Richiesta inviata',
-                    'Demande envoyée',
-                    `La richiesta per <strong>${DEMO_PATIENT}</strong> è partita verso la Struttura 2. Il paziente riceve già un\'email con il link per partecipare alla videochiamata, e il consenso informato è visibile qui sotto, in Documenti Clinici: per le urgenze viene firmato in automatico, ma resta comunque tracciato e consultabile.`,
-                    `La demande pour <strong>${DEMO_PATIENT}</strong> est partie vers l\'Établissement 2. Le patient reçoit déjà un e-mail avec le lien pour rejoindre la visioconférence, et le consentement est visible ci-dessous, dans Documents Cliniques : pour les urgences il est signé automatiquement, mais reste tout de même tracé et consultable.`);
-                highlightDemoEl('#card-docs-section');
+                    'Televisita programmata',
+                    'Télévisite planifiée',
+                    `La televisita per <strong>${DEMO_PATIENT}</strong> è stata creata e inviata alla Struttura 2 per l\'accettazione. Il consenso informato è già pronto, ma resta "Non inviato" finché il medico non decide di mandarlo al paziente.`,
+                    `La télévisite pour <strong>${DEMO_PATIENT}</strong> a été créée et envoyée à l\'Établissement 2 pour acceptation. Le consentement est déjà prêt, mais reste "Non envoyé" jusqu\'à ce que le médecin décide de l\'envoyer au patient.`);
             });
 
-            scheduleDemo(23000, () => {
-                const consentDoc = S.docs.find(d => d.patient === DEMO_PATIENT && d.isConsentDocument);
-                if (consentDoc) viewDocPreview(consentDoc.id);
-                showDemoGuide(4, TOTAL,
-                    'Il consenso informato',
-                    'Le consentement éclairé',
-                    'Ecco il documento di consenso: viene generato automaticamente, è leggibile e professionale, e risulta già condiviso con l\'altra struttura, pronto per essere consultato da entrambi i medici in qualsiasi momento.',
-                    'Voici le document de consentement : il est généré automatiquement, lisible et professionnel, et déjà partagé avec l\'autre établissement, prêt à être consulté par les deux médecins à tout moment.');
-            });
-
-            scheduleDemo(32500, () => {
-                showDemoGuide(5, TOTAL,
-                    'Privacy del paziente: come viene tutelata',
-                    'Vie privée du patient : comment elle est protégée',
-                    'Nei casi non urgenti il paziente riceve il consenso da firmare via email e deve leggere l\'intero testo prima di poter premere "Accetto": il pulsante resta bloccato finché non si arriva in fondo alla pagina. Il link è valido una sola volta e si disattiva subito dopo la firma, e un codice OTP univoco conferma che è stato davvero il paziente a firmare, non chiunque abbia semplicemente intercettato l\'email. È così che il software rispetta il diritto alla privacy e alla protezione dei dati sanitari.',
-                    'Dans les cas non urgents, le patient reçoit le consentement à signer par e-mail et doit lire l\'intégralité du texte avant de pouvoir cliquer sur "J\'accepte" : le bouton reste bloqué jusqu\'à ce qu\'il arrive au bas de la page. Le lien n\'est valable qu\'une seule fois et se désactive immédiatement après la signature, et un code OTP unique confirme que c\'est bien le patient qui a signé, et non une personne ayant simplement intercepté l\'e-mail. C\'est ainsi que le logiciel respecte le droit à la vie privée et à la protection des données de santé.');
-            });
-
-            scheduleDemo(41500, () => {
-                const modalEl = document.getElementById('docPreviewModal');
-                const modal = modalEl && bootstrap.Modal.getInstance(modalEl);
-                if (modal) modal.hide();
+            scheduleDemo(23500, () => {
                 switchRole('struttura2');
-                showDemoGuide(6, TOTAL,
+                showDemoGuide(4, TOTAL,
                     'Cambiamo prospettiva: Struttura 2',
                     'Changeons de perspective : Établissement 2',
-                    'Chiudiamo l\'anteprima e passiamo al medico della <strong>Struttura 2 — Ospedale Cervello di Palermo</strong>. Grazie alla sincronizzazione in tempo reale via rete MQTT, la richiesta è già arrivata, pur trovandosi i due medici in ospedali diversi e senza alcun server centrale che conservi i dati.',
-                    'Fermons l\'aperçu et passons au médecin de l\'<strong>Établissement 2 — Hôpital Cervello de Palerme</strong>. Grâce à la synchronisation en temps réel via le réseau MQTT, la demande est déjà arrivée, bien que les deux médecins se trouvent dans des hôpitaux différents, sans aucun serveur central qui conserve les données.');
+                    'Passiamo al medico della <strong>Struttura 2 — Ospedale Cervello di Palermo</strong>. Grazie alla sincronizzazione in tempo reale via rete MQTT, la richiesta è già arrivata, pur trovandosi i due medici in ospedali diversi e senza alcun server centrale che conservi i dati.',
+                    'Passons au médecin de l\'<strong>Établissement 2 — Hôpital Cervello de Palerme</strong>. Grâce à la synchronisation en temps réel via le réseau MQTT, la demande est déjà arrivée, bien que les deux médecins se trouvent dans des hôpitaux différents, sans aucun serveur central qui conserve les données.');
                 highlightDemoEl('#role-badge');
             });
 
-            scheduleDemo(49500, () => {
-                showDemoGuide(7, TOTAL,
-                    'La richiesta in arrivo',
-                    'La demande entrante',
-                    'Il medico della Struttura 2 vede subito la richiesta in arrivo, con il nome del collega e i dettagli del paziente, e può scegliere se accettarla o rifiutarla.',
-                    'Le médecin de l\'Établissement 2 voit immédiatement la demande entrante, avec le nom du confrère et les détails du patient, et peut choisir de l\'accepter ou de la refuser.');
-                highlightDemoEl('#card-imm-section');
+            scheduleDemo(31500, () => {
+                if (demoTvId) acceptSched(demoTvId);
+                showDemoGuide(5, TOTAL,
+                    'Visita accettata',
+                    'Visite acceptée',
+                    'Il medico della Struttura 2 accetta la televisita: viene creata la stanza per la videochiamata, condivisa automaticamente fra le due strutture.',
+                    'Le médecin de l\'Établissement 2 accepte la télévisite : la salle de visioconférence est créée, partagée automatiquement entre les deux établissements.');
+                highlightDemoEl('#card-sched-section');
             });
 
-            scheduleDemo(56500, () => {
-                acceptImmediate();
+            scheduleDemo(39000, () => {
+                switchRole('struttura1');
+                showDemoGuide(6, TOTAL,
+                    'Torniamo dal medico richiedente',
+                    'Retour chez le médecin demandeur',
+                    'Torniamo alla Struttura 1: ora che la visita è accettata, il medico deve occuparsi del consenso informato del paziente, passo fondamentale prima di poter avviare la videochiamata.',
+                    'Retournons à l\'Établissement 1 : maintenant que la visite est acceptée, le médecin doit s\'occuper du consentement éclairé du patient, étape indispensable avant de pouvoir démarrer la visioconférence.');
+                highlightDemoEl('#role-badge');
+            });
+
+            scheduleDemo(46500, () => {
+                if (demoTvId) sendConsentEmail(demoTvId);
+                showDemoGuide(7, TOTAL,
+                    'Invio del consenso al paziente',
+                    'Envoi du consentement au patient',
+                    'Il medico invia il modulo di consenso al paziente: parte un\'email con un link personale e a uso unico. Il paziente dovrà aprirlo, leggere tutto il documento e firmarlo lui stesso: è un suo diritto sapere esattamente come saranno usati i suoi dati sanitari prima di acconsentire.',
+                    'Le médecin envoie le formulaire de consentement au patient : un e-mail part avec un lien personnel à usage unique. Le patient devra l\'ouvrir, lire tout le document et le signer lui-même : c\'est son droit de savoir exactement comment ses données de santé seront utilisées avant de donner son accord.');
+                highlightDemoEl('#card-sched-section');
+            });
+
+            scheduleDemo(55500, () => {
+                if (demoTvId) viewConsentPDF(demoTvId);
                 showDemoGuide(8, TOTAL,
-                    'Richiesta accettata',
-                    'Demande acceptée',
-                    'Il medico accetta: lo stato si aggiorna all\'istante su entrambi i dispositivi, ed entrambi i medici sono pronti per entrare in videochiamata.',
-                    'Le médecin accepte : le statut se met à jour instantanément sur les deux appareils, et les deux médecins sont prêts à rejoindre la visioconférence.');
+                    'Ecco cosa vede il paziente',
+                    'Voici ce que voit le patient',
+                    'Questa è la stessa schermata che il paziente vede cliccando sul link ricevuto per email: deve leggere l\'intero modulo di consenso. Il pulsante "Accetto" resta bloccato finché non si arriva in fondo al testo, per essere certi che il consenso sia davvero informato.',
+                    'Voici exactement l\'écran que le patient voit en cliquant sur le lien reçu par e-mail : il doit lire l\'intégralité du formulaire de consentement. Le bouton "J\'accepte" reste bloqué jusqu\'à ce qu\'on arrive au bas du texte, pour garantir un consentement vraiment éclairé.');
             });
 
             scheduleDemo(65000, () => {
-                S.immReq = 'in-corso';
-                S.activeRoom = S.immRoom;
-                renderAll();
-                launchJitsi(S.immRoom);
-                scrollToVideo();
+                const scrollBody = document.getElementById('pdf-modal-scroll-body');
+                if (scrollBody) scrollBody.scrollTop = scrollBody.scrollHeight;
+                setTimeout(() => document.getElementById('btn-unlock-otp')?.click(), 700);
                 showDemoGuide(9, TOTAL,
-                    'Videochiamata avviata',
-                    'Visioconférence démarrée',
-                    'Ecco l\'integrazione con Jitsi Meet per il consulto video: i due medici si vedono in tempo reale, mentre a fianco resta sempre visibile la cartella clinica del paziente, sempre nel rispetto della riservatezza dei suoi dati.',
-                    'Voici l\'intégration avec Jitsi Meet pour la consultation vidéo : les deux médecins se voient en temps réel, tandis que le dossier clinique du patient reste toujours visible à côté, toujours dans le respect de la confidentialité de ses données.');
+                    'Il paziente accetta e riceve l\'OTP',
+                    'Le patient accepte et reçoit l\'OTP',
+                    'Letto tutto il documento, il pulsante si attiva e il paziente può accettare. A questo punto il sistema genera un codice OTP univoco e lo invia al paziente: serve a dimostrare che è stato davvero lui ad accettare, non chiunque abbia semplicemente intercettato l\'email.',
+                    'Une fois tout le document lu, le bouton s\'active et le patient peut accepter. Le système génère alors un code OTP unique et l\'envoie au patient : il sert à prouver que c\'est vraiment lui qui a accepté, et non une personne ayant simplement intercepté l\'e-mail.');
             });
 
             scheduleDemo(75000, () => {
+                const tv = S.televisite.find(t => t.id === demoTvId);
+                const otp = tv ? tv.consentOtp : null;
+                const modalEl = document.getElementById('pdfModal');
+                const modal = modalEl && bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+                if (otp && demoTvId) {
+                    setTimeout(() => {
+                        const input = document.getElementById(`otp-input-${demoTvId}`);
+                        if (input) {
+                            input.value = otp;
+                            verifyConsentOtp(demoTvId);
+                        }
+                    }, 500);
+                }
+                showDemoGuide(10, TOTAL,
+                    'Il medico verifica il codice OTP',
+                    'Le médecin vérifie le code OTP',
+                    'Il paziente comunica (o digita lui stesso, su un link futuro) il codice OTP ricevuto. Il medico lo inserisce per confermare la firma: solo a questo punto il consenso passa allo stato "Firmato", con piena validità.',
+                    'Le patient communique (ou saisit lui-même, sur un lien futur) le code OTP reçu. Le médecin le saisit pour confirmer la signature : ce n\'est qu\'à ce moment que le consentement passe au statut "Signé", avec pleine validité.');
+                highlightDemoEl('#card-sched-section');
+            });
+
+            scheduleDemo(84000, () => {
+                if (demoTvId) startVisit(demoTvId);
+                showDemoGuide(11, TOTAL,
+                    'Videochiamata avviata',
+                    'Visioconférence démarrée',
+                    'Con il consenso firmato, il medico può avviare la videochiamata: ecco l\'integrazione con Jitsi Meet, con a fianco la cartella clinica del paziente sempre visibile.',
+                    'Le consentement étant signé, le médecin peut démarrer la visioconférence : voici l\'intégration avec Jitsi Meet, avec le dossier clinique du patient toujours visible à côté.');
+            });
+
+            scheduleDemo(94000, () => {
                 const textarea = document.getElementById('emr-notes-textarea');
                 if (textarea) {
                     textarea.value = currentLang === 'fr' ? DEMO_NOTES_FR : DEMO_NOTES_IT;
                     saveEMRNotes(S.activeTvId, false);
                 }
-                showDemoGuide(10, TOTAL,
+                showDemoGuide(12, TOTAL,
                     'Diagnosi e note cliniche',
                     'Diagnostic et notes cliniques',
                     'Durante il consulto, il medico annota direttamente nella cartella clinica i sintomi riferiti, la diagnosi e la terapia prescritta: tutto resta salvato nel fascicolo del paziente, visibile solo ai medici coinvolti nella visita.',
@@ -8124,19 +8162,19 @@
                 highlightDemoEl('#emr-notes-textarea');
             });
 
-            scheduleDemo(83500, () => {
+            scheduleDemo(102500, () => {
                 openDoctorSignatureModal(S.activeTvId);
                 setTimeout(() => document.getElementById('sig-text-tab')?.click(), 500);
-                showDemoGuide(11, TOTAL,
+                showDemoGuide(13, TOTAL,
                     'Firma digitale del referto',
                     'Signature numérique du rapport',
                     'A consulto terminato, il medico firma digitalmente il referto: può disegnare la firma a mano oppure, come in questa demo, usare la firma testuale certificata.',
                     'À la fin de la consultation, le médecin signe numériquement le rapport : il peut dessiner sa signature à la main ou, comme dans cette démo, utiliser la signature textuelle certifiée.');
             });
 
-            scheduleDemo(91500, () => {
+            scheduleDemo(110500, () => {
                 confirmDoctorSignature();
-                showDemoGuide(12, TOTAL,
+                showDemoGuide(14, TOTAL,
                     'Referto firmato e consegnato',
                     'Rapport signé et remis',
                     'Il referto viene generato in PDF con una Firma Elettronica Avanzata (FEA) e un codice di verifica univoco, che garantisce valore legale al documento e permette di accertare in ogni momento che non sia stato alterato. Viene condiviso automaticamente con l\'altra struttura, e il paziente riceve un\'email con un link sicuro per visualizzarlo e scaricarlo, senza dover creare nessun account.',
@@ -8144,21 +8182,21 @@
                 highlightDemoEl('#card-docs-section');
             });
 
-            scheduleDemo(99500, () => {
+            scheduleDemo(118500, () => {
                 endCall();
-                showDemoGuide(13, TOTAL,
+                showDemoGuide(15, TOTAL,
                     'Fine del consulto',
                     'Fin de la consultation',
                     'Il medico chiude la videochiamata: la televisita passa automaticamente allo stato "Completata" per entrambe le strutture.',
                     'Le médecin termine la visioconférence : la télévisite passe automatiquement au statut "Terminée" pour les deux établissements.');
             });
 
-            scheduleDemo(107500, () => {
-                showDemoGuide(14, TOTAL,
+            scheduleDemo(126500, () => {
+                showDemoGuide(16, TOTAL,
                     'Demo completata!',
                     'Démo terminée !',
-                    'Hai visto l\'intero percorso: richiesta urgente, consenso informato e privacy del paziente, accettazione, consulto video, diagnosi, firma digitale con valore legale e consegna del referto al paziente. Puoi ripetere la demo in qualsiasi momento.',
-                    'Vous avez vu tout le parcours : demande urgente, consentement éclairé et vie privée du patient, acceptation, consultation vidéo, diagnostic, signature numérique à valeur légale et remise du rapport au patient. Vous pouvez relancer la démo à tout moment.');
+                    'Hai visto l\'intero percorso di una televisita normale: programmazione, accettazione, consenso informato letto e firmato dal paziente con codice OTP, consulto video, diagnosi, firma digitale con valore legale e consegna del referto al paziente. Puoi ripetere la demo in qualsiasi momento.',
+                    'Vous avez vu tout le parcours d\'une télévisite normale : planification, acceptation, consentement éclairé lu et signé par le patient avec un code OTP, consultation vidéo, diagnostic, signature numérique à valeur légale et remise du rapport au patient. Vous pouvez relancer la démo à tout moment.');
             });
         }
 
