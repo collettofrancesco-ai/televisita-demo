@@ -470,6 +470,18 @@
             padding: 0;
         }
 
+        #admin-view-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #00796b 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-y: auto;
+            padding: 0;
+        }
+
         .logo-badge-container {
             background: var(--card);
             border-radius: 24px;
@@ -1112,6 +1124,60 @@
             <div class="w-100 text-center py-3"
                 style="background: rgba(0, 0, 0, 0.35); border-top: 1px solid rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.6); font-size: 0.8rem; font-family: 'Outfit', sans-serif; letter-spacing: 0.02em; z-index: 10;">
                 Olomedia s.r.l. P.Iva 05715380829 - Powered By OLOMEDIA &copy; 2026
+            </div>
+        </div>
+    </div>
+
+    <!-- Vista Amministratore: accessibile solo con ?admin=1 nell'URL, non raggiungibile dalla
+         schermata di login normale. Mostra in sola lettura i dati di entrambe le strutture,
+         ricevuti via il canale MQTT cifrato (vedi publishAdminBackup), decifrati nel browser con
+         la chiave privata salvata solo su questo dispositivo. -->
+    <div id="admin-view-overlay" style="display:none;">
+        <div style="max-width:1100px; width:100%; margin: auto; padding: 3rem 1.5rem;">
+            <div class="text-center mb-4">
+                <div class="fw-bold fs-4 text-white">oloHealth Televisita — Area Amministratore</div>
+                <div class="text-white-50 small">Vista in sola lettura dei dati di entrambe le strutture</div>
+            </div>
+
+            <div id="admin-key-section" class="login-card mx-auto" style="max-width:500px;">
+                <h5 class="fw-bold mb-3" style="color: var(--text);">Chiave privata amministratore</h5>
+                <p class="text-muted small mb-3">
+                    Incolla qui la tua chiave privata (il contenuto del file
+                    <code>admin_private_key.DO_NOT_SHARE.json</code>). Resta salvata solo nel
+                    browser di questo computer, non viene mai inviata da nessuna parte: serve solo
+                    a decifrare localmente i dati che arrivano dalle strutture.
+                </p>
+                <textarea id="admin-key-input" class="form-control mb-2" rows="4"
+                    placeholder='{"key_ops":["deriveKey"],"ext":true,"kty":"EC", ...}'></textarea>
+                <div id="admin-key-error" class="text-danger small mb-2" style="min-height:1.2em;"></div>
+                <button class="btn btn-primary w-100 py-2 fw-bold" onclick="submitAdminKey()">
+                    <i class="bi bi-shield-lock me-2"></i>Salva e connetti
+                </button>
+            </div>
+
+            <div id="admin-dashboard-section" style="display:none;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span id="admin-mqtt-status" class="badge bg-secondary">MQTT: in connessione...</span>
+                    <button class="btn btn-link btn-sm text-white-50" onclick="forgetAdminKey()">
+                        <i class="bi bi-box-arrow-right me-1"></i>Cambia chiave / disconnetti
+                    </button>
+                </div>
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <div class="login-card" style="cursor:default;">
+                            <h6 class="fw-bold mb-1" style="color:#1565c0;">Struttura 1</h6>
+                            <div id="admin-status-struttura1" class="text-muted small mb-3">In attesa di dati...</div>
+                            <div id="admin-content-struttura1"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="login-card" style="cursor:default;">
+                            <h6 class="fw-bold mb-1" style="color:#00796b;">Struttura 2</h6>
+                            <div id="admin-status-struttura2" class="text-muted small mb-3">In attesa di dati...</div>
+                            <div id="admin-content-struttura2"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -3276,6 +3342,214 @@
             if (adminBackupIntervalId) clearInterval(adminBackupIntervalId);
             setTimeout(publishAdminBackup, 5000);
             adminBackupIntervalId = setInterval(publishAdminBackup, ADMIN_BACKUP_INTERVAL_MS);
+        }
+
+        // ---------------------------------------------------------------------------
+        // VISTA AMMINISTRATORE (sola lettura, raggiungibile solo con ?admin=1 nell'URL)
+        // ---------------------------------------------------------------------------
+        // Riceve e decifra nel browser i backup pubblicati da publishAdminBackup, usando la
+        // chiave privata corrispondente alla pubblica incorporata nel codice (vedi più sopra).
+        // La chiave privata NON è mai nel codice: l'amministratore la incolla una sola volta,
+        // resta solo nel localStorage di questo browser (mai sincronizzata, mai inviata via rete).
+        const ADMIN_PRIVATE_KEY_STORAGE_KEY = 'tv_admin_private_key_jwk';
+        const adminReceivedBackups = {}; // { struttura1: {data, ts, facility}, struttura2: {...} }
+        const adminPendingBackups = {};  // riassemblaggio blocchi in corso, per backupId
+        let adminMqttClient = null;
+        let adminPrivateCryptoKey = null;
+
+        function isAdminViewMode() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('admin') === '1';
+        }
+
+        function getStoredAdminPrivateKeyJwk() {
+            try {
+                const raw = localStorage.getItem(ADMIN_PRIVATE_KEY_STORAGE_KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch (_) { return null; }
+        }
+
+        function forgetAdminKey() {
+            try { localStorage.removeItem(ADMIN_PRIVATE_KEY_STORAGE_KEY); } catch (_) { }
+            if (adminMqttClient) {
+                try { adminMqttClient.end(true); } catch (_) { }
+                adminMqttClient = null;
+            }
+            adminPrivateCryptoKey = null;
+            document.getElementById('admin-dashboard-section').style.display = 'none';
+            document.getElementById('admin-key-section').style.display = 'block';
+            document.getElementById('admin-key-input').value = '';
+        }
+
+        async function submitAdminKey() {
+            const errEl = document.getElementById('admin-key-error');
+            errEl.textContent = '';
+            const raw = document.getElementById('admin-key-input').value.trim();
+            let jwk;
+            try {
+                jwk = JSON.parse(raw);
+            } catch (e) {
+                errEl.textContent = 'Il testo incollato non è un JSON valido.';
+                return;
+            }
+            try {
+                await crypto.subtle.importKey('jwk', jwk, { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveKey']);
+            } catch (e) {
+                errEl.textContent = 'Chiave non valida o incompatibile (deve essere una chiave privata ECDH P-256).';
+                return;
+            }
+            try { localStorage.setItem(ADMIN_PRIVATE_KEY_STORAGE_KEY, JSON.stringify(jwk)); } catch (_) { }
+            startAdminView(jwk);
+        }
+
+        async function startAdminView(jwk) {
+            adminPrivateCryptoKey = await crypto.subtle.importKey(
+                'jwk', jwk, { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveKey']
+            );
+            document.getElementById('admin-key-section').style.display = 'none';
+            document.getElementById('admin-dashboard-section').style.display = 'block';
+            connectAdminMqtt(0);
+        }
+
+        function updateAdminMqttStatus(text, type) {
+            const el = document.getElementById('admin-mqtt-status');
+            if (!el) return;
+            el.textContent = 'MQTT: ' + text;
+            el.className = 'badge ' + (type === 'success' ? 'bg-success' : type === 'danger' ? 'bg-danger' : 'bg-warning text-dark');
+        }
+
+        function connectAdminMqtt(brokerIndex) {
+            const broker = MQTT_BROKERS[brokerIndex % MQTT_BROKERS.length];
+            updateAdminMqttStatus('connessione (' + broker.name + ')...', 'warning');
+            adminMqttClient = mqtt.connect(broker.url, { clean: true, connectTimeout: 5000 });
+
+            adminMqttClient.on('connect', () => {
+                updateAdminMqttStatus('connesso (' + broker.name + ')', 'success');
+                adminMqttClient.subscribe(ADMIN_BACKUP_TOPIC, { qos: 1 });
+            });
+            adminMqttClient.on('error', () => {
+                updateAdminMqttStatus('riconnessione...', 'danger');
+                try { adminMqttClient.end(true); } catch (_) { }
+                setTimeout(() => connectAdminMqtt(brokerIndex + 1), 2000);
+            });
+            adminMqttClient.on('message', (topic, message) => {
+                handleAdminBackupMessage(message);
+            });
+        }
+
+        // Decifra un blocco completo (schema ECIES, lato decifratura): deriva la chiave AES
+        // condivisa con la propria chiave privata e la chiave pubblica effimera ricevuta nel
+        // primo blocco del backup, esattamente come fa admin_listener.js lato Node.
+        async function decryptAdminBackup(ephemeralPublicJwk, ivBase64, ciphertextBase64) {
+            const ephemeralPublicKey = await crypto.subtle.importKey(
+                'jwk', ephemeralPublicJwk, { name: 'ECDH', namedCurve: 'P-256' }, [], []
+            );
+            const sharedAesKey = await crypto.subtle.deriveKey(
+                { name: 'ECDH', public: ephemeralPublicKey },
+                adminPrivateCryptoKey,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['decrypt']
+            );
+            const plaintextBuffer = await crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv: base64ToArrayBuffer(ivBase64) },
+                sharedAesKey,
+                base64ToArrayBuffer(ciphertextBase64)
+            );
+            return JSON.parse(new TextDecoder().decode(plaintextBuffer));
+        }
+
+        async function handleAdminBackupMessage(message) {
+            try {
+                const envelope = JSON.parse(message.toString());
+                const { backupId, role, facility, ts, chunkIndex, totalChunks, chunkData } = envelope;
+
+                if (!adminPendingBackups[backupId]) {
+                    adminPendingBackups[backupId] = {
+                        role, facility, ts, totalChunks,
+                        chunks: new Array(totalChunks).fill(null),
+                        ephemeralPublicJwk: null,
+                        iv: null
+                    };
+                }
+                const entry = adminPendingBackups[backupId];
+                entry.chunks[chunkIndex] = chunkData;
+                if (chunkIndex === 0) {
+                    entry.ephemeralPublicJwk = envelope.ephemeralPublicJwk;
+                    entry.iv = envelope.iv;
+                }
+                if (!entry.chunks.every(c => c !== null)) return;
+
+                delete adminPendingBackups[backupId];
+                const fullCiphertext = entry.chunks.join('');
+                const backupData = await decryptAdminBackup(entry.ephemeralPublicJwk, entry.iv, fullCiphertext);
+
+                adminReceivedBackups[entry.role] = { data: backupData, ts: entry.ts, facility: entry.facility };
+                renderAdminDashboard(entry.role);
+            } catch (err) {
+                console.error('Errore nella gestione di un backup admin:', err);
+            }
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str == null ? '' : String(str);
+            return div.innerHTML;
+        }
+
+        function renderAdminDashboard(role) {
+            const entry = adminReceivedBackups[role];
+            if (!entry) return;
+            const statusEl = document.getElementById('admin-status-' + role);
+            const contentEl = document.getElementById('admin-content-' + role);
+            if (!statusEl || !contentEl) return;
+
+            statusEl.textContent = entry.facility + ' — ultimo aggiornamento: ' + new Date(entry.ts).toLocaleString('it-IT');
+
+            const televisite = (entry.data.shared && entry.data.shared.televisite) || [];
+            const docs = (entry.data.shared && entry.data.shared.docs) || [];
+
+            let html = '<div class="fw-semibold small mb-1">Televisite (' + televisite.length + ')</div>';
+            if (televisite.length === 0) {
+                html += '<div class="text-muted small mb-3">Nessuna televisita.</div>';
+            } else {
+                html += '<div class="table-responsive mb-3"><table class="table table-sm"><tbody>';
+                televisite.forEach(tv => {
+                    const modeBadge = tv.visitMode === 'centro'
+                        ? '<span class="badge bg-warning text-dark">Centro</span>'
+                        : '<span class="badge bg-info text-dark">Network</span>';
+                    html += '<tr><td class="small">' + escapeHtml(tv.date || '') + '</td>'
+                        + '<td class="small">' + escapeHtml(tv.patient || '') + '</td>'
+                        + '<td class="small">' + escapeHtml(tv.status || '') + '</td>'
+                        + '<td>' + modeBadge + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+            }
+
+            html += '<div class="fw-semibold small mb-1">Documenti (' + docs.length + ')</div>';
+            if (docs.length === 0) {
+                html += '<div class="text-muted small">Nessun documento.</div>';
+            } else {
+                html += '<ul class="list-unstyled small mb-0">';
+                docs.forEach(d => {
+                    const sharedBadge = d.shared === false
+                        ? '<span class="badge bg-secondary">privato</span>'
+                        : '<span class="badge bg-success">condiviso</span>';
+                    html += '<li class="mb-1">' + escapeHtml(d.name || d.id || '') + ' ' + sharedBadge + '</li>';
+                });
+                html += '</ul>';
+            }
+
+            contentEl.innerHTML = html;
+        }
+
+        function initAdminView() {
+            const jwk = getStoredAdminPrivateKeyJwk();
+            if (jwk) {
+                startAdminView(jwk);
+            } else {
+                document.getElementById('admin-key-section').style.display = 'block';
+            }
         }
 
         // Registri per la trasmissione dei file a blocchi (chunks)
@@ -9234,6 +9508,16 @@
         // INIZIALIZZAZIONE
         // ---------------------------------------------------------------------------
         document.addEventListener('DOMContentLoaded', () => {
+            // Vista amministratore: bypassa interamente login/dashboard delle strutture, mostra
+            // solo la vista in sola lettura dei dati di entrambe (vedi initAdminView).
+            if (isAdminViewMode()) {
+                document.getElementById('login-overlay').style.display = 'none';
+                document.getElementById('admin-view-overlay').style.display = 'flex';
+                lockBackgroundForPatientView();
+                initAdminView();
+                return;
+            }
+
             // Vista pubblica paziente: bypassa interamente login/dashboard, mostra solo il consenso
             if (isPatientConsentMode()) {
                 document.getElementById('login-overlay').style.display = 'none';
