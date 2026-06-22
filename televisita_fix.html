@@ -5641,6 +5641,10 @@
         // host non avrebbe modo di sapere quale fosse la misura corretta appena concordata.
         let lastAgreedCanvasWidth = 0;
         let lastAgreedCanvasHeight = 0;
+        // Posizione di scorrimento dell'host al momento dell'ultimo 'canvas_size': permette a chi
+        // si unisce alla collaborazione di partire dalla stessa pagina dell'host invece che sempre
+        // dall'inizio del documento (vedi il caso 'canvas_size' in handleCollabAction).
+        let lastAgreedScrollTop = 0;
         // True quando il rendering del PDF (locale) non è andato a buon fine: in questo caso
         // l'altezza del documento non è nota in modo affidabile, quindi la collaborazione non
         // deve attivarsi, per evitare di disegnare su un'altezza diversa da quella dell'altro medico.
@@ -5743,6 +5747,7 @@
                 pendingIncomingDraws = [];
                 lastAgreedCanvasWidth = 0;
                 lastAgreedCanvasHeight = 0;
+                lastAgreedScrollTop = 0;
                 if (canvas) canvas.style.display = 'none';
                 if (toolbar) toolbar.style.setProperty('display', 'none', 'important');
                 if (statusDiv) statusDiv.style.display = 'none';
@@ -5848,6 +5853,16 @@
                 if (isCollabHost) return;
                 lastAgreedCanvasWidth = action.width;
                 lastAgreedCanvasHeight = action.height;
+                lastAgreedScrollTop = action.scrollTop || 0;
+
+                const wrapper = document.getElementById('collab-board-wrapper');
+                if (wrapper) {
+                    isIncomingScroll = true;
+                    wrapper.scrollTop = lastAgreedScrollTop;
+                    if (window.incomingScrollTimeout) clearTimeout(window.incomingScrollTimeout);
+                    window.incomingScrollTimeout = setTimeout(() => { isIncomingScroll = false; }, 150);
+                }
+
                 const canvas = document.getElementById('collab-canvas');
                 // L'host (più rapido a misurare) può trasmettere questa misura prima che qui sia
                 // finita la propria sequenza di apertura del modale (rendering del PDF, attesa
@@ -6027,7 +6042,19 @@
                 // adotta senza rimisurare in autonomia (vedi il commento su isCollabHost).
                 lastAgreedCanvasWidth = newCanvas.width;
                 lastAgreedCanvasHeight = newCanvas.height;
-                const sizeAction = { kind: 'canvas_size', width: newCanvas.width, height: newCanvas.height };
+                // Porta con sé anche la posizione di scorrimento attuale dell'host: senza questo,
+                // chi si unisce alla collaborazione parte sempre dall'inizio del documento finché
+                // non arriva un evento di scroll separato. Se l'host aveva già scorso il documento
+                // (es. a pagina 2) prima di accendere la lavagna, un segno disegnato "in cima alla
+                // propria vista" non corrisponde affatto alla stessa posizione assoluta sullo
+                // schermo dell'altro lato, che lo vede comparire altrove (es. al centro).
+                const wrapperForScroll = document.getElementById('collab-board-wrapper');
+                const sizeAction = {
+                    kind: 'canvas_size',
+                    width: newCanvas.width,
+                    height: newCanvas.height,
+                    scrollTop: wrapperForScroll ? wrapperForScroll.scrollTop : 0
+                };
                 bc.postMessage({ type: 'collab_action', action: sizeAction });
                 if (mqttClient && mqttClient.connected) {
                     sendMQTTMessage({ type: 'collab_action', action: sizeAction });
@@ -6054,6 +6081,12 @@
                 // correggere il tutto comunque, vedi 'canvas_size' in handleCollabAction.
                 newCanvas.width = lastAgreedCanvasWidth;
                 newCanvas.height = lastAgreedCanvasHeight;
+                const wrapperReopen = document.getElementById('collab-board-wrapper');
+                if (wrapperReopen) {
+                    isIncomingScroll = true;
+                    wrapperReopen.scrollTop = lastAgreedScrollTop;
+                    setTimeout(() => { isIncomingScroll = false; }, 150);
+                }
                 markCollabCanvasReady();
             }
             // Altrimenti (non host, prima attivazione, nessun 'canvas_size' arrivato ancora) il
