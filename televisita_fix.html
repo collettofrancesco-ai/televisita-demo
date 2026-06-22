@@ -1084,11 +1084,19 @@
                     <div class="text-start mb-3">
                         <label for="room-code-input" class="form-label small fw-semibold text-muted"
                             data-i18n="login_room_code">Codice Stanza (Sincronizzazione PC)</label>
-                        <input type="text" id="room-code-input" class="form-control" placeholder="es. cervello-tunisia"
-                            value="cervello-tunisia" onkeydown="if(event.key==='Enter')submitLogin()">
+                        <div class="input-group">
+                            <input type="password" id="room-code-input" class="form-control" autocomplete="off"
+                                placeholder="es. cervello-tunisia" value="cervello-tunisia"
+                                onkeydown="if(event.key==='Enter')submitLogin()">
+                            <button type="button" class="btn btn-outline-secondary" tabindex="-1"
+                                onclick="toggleRoomCodeVisibility()" aria-label="Mostra/nascondi codice stanza">
+                                <i class="bi bi-eye" id="room-code-toggle-icon"></i>
+                            </button>
+                        </div>
                         <div class="text-muted" style="font-size: 0.65rem; margin-top: 2px;"
                             data-i18n="login_room_code_help">
-                            Usa lo stesso codice su un altro PC per sincronizzare le due schede.
+                            Usa lo stesso codice su un altro PC per sincronizzare le due schede. È l'unico segreto
+                            che protegge la privacy dei dati: non condividerlo con nessuno fuori dalle due strutture.
                         </div>
                     </div>
 
@@ -2396,9 +2404,7 @@
                 patient_consent_greeting: "Gentile {name}, prima di proseguire ti chiediamo di leggere e accettare il consenso informato qui sotto.",
                 patient_consent_sending: "Invio in corso...",
                 patient_consent_success: "Grazie! Il codice OTP per firmare il consenso è stato inviato alla tua email.",
-                patient_consent_success_noemail: "Documento accettato. Il medico è stato avvisato; riceverai il codice OTP a breve.",
                 patient_otp_instructions: "Ecco il tuo codice OTP. Inseriscilo qui sotto per firmare il consenso:",
-                patient_otp_instructions_noemail: "Non siamo riusciti a inviarti l'e-mail con il codice, ma eccolo comunque qui sotto: inseriscilo per firmare il consenso. Il medico ne è già a conoscenza.",
                 patient_otp_confirm_btn: "Firma il Consenso",
                 patient_otp_invalid: "Codice OTP errato. Riprova.",
                 patient_consent_signed_success: "Consenso firmato con successo! Puoi chiudere questa pagina.",
@@ -2655,9 +2661,7 @@
                 patient_consent_greeting: "Cher/Chère {name}, avant de continuer, veuillez lire et accepter le consentement informé ci-dessous.",
                 patient_consent_sending: "Envoi en cours...",
                 patient_consent_success: "Merci ! Le code OTP pour signer le consentement a été envoyé à votre e-mail.",
-                patient_consent_success_noemail: "Document accepté. Le médecin a été averti ; vous recevrez le code OTP sous peu.",
                 patient_otp_instructions: "Voici votre code OTP. Saisissez-le ci-dessous pour signer le consentement :",
-                patient_otp_instructions_noemail: "Nous n'avons pas réussi à vous envoyer l'e-mail avec le code, mais le voici tout de même ci-dessous : saisissez-le pour signer le consentement. Le médecin en a déjà connaissance.",
                 patient_otp_confirm_btn: "Signer le Consentement",
                 patient_otp_invalid: "Code OTP incorrect. Veuillez réessayer.",
                 patient_consent_signed_success: "Consentement signé avec succès ! Vous pouvez fermer cette page.",
@@ -2924,6 +2928,7 @@
         let mqttClient = null;
         const MQTT_TOPIC_BASE = 'olohealth/televisita/demo/';
         let currentGroupCode = 'cervello-tunisia';
+        let currentTopicId = null;
         let lastStateReplyTime = 0;
         const processedEventIds = new Set();
 
@@ -2996,6 +3001,25 @@
                 ['encrypt', 'decrypt']
             );
             return cachedCryptoKey;
+        }
+
+        // Deriva il nome del topic MQTT dal codice stanza, con un suffisso fisso che separa
+        // questo hash da quello usato per la chiave di cifratura (getCryptoKey). Il topic è per
+        // natura pubblico (chiunque può iscriversi al broker e leggere i nomi dei topic): se
+        // usasse lo stesso hash della chiave AES, vederlo equivarrebbe a vedere la chiave stessa.
+        // Con un dominio separato, conoscere il topic non dà alcuna informazione utile sulla
+        // chiave né sul codice stanza in chiaro (resistenza al preimage di SHA-256).
+        async function deriveTopicId(roomCode) {
+            const seed = (roomCode || '') + '::topic';
+            if (!isSubtleCryptoSupported) {
+                let hash = 0;
+                for (let i = 0; i < seed.length; i++) {
+                    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+                }
+                return hash.toString(16).padStart(8, '0');
+            }
+            const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(seed));
+            return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
         // Cifra un oggetto JSON usando AES-GCM-256 (in secure context) o XOR sui byte (come fallback)
@@ -3114,8 +3138,8 @@
 
         // Funzione centralizzata per inviare messaggi MQTT cifrati
         function sendMQTTMessage(messageObj) {
-            if (!mqttClient || !mqttClient.connected) return;
-            const topic = MQTT_TOPIC_BASE + currentGroupCode;
+            if (!mqttClient || !mqttClient.connected || !currentTopicId) return;
+            const topic = MQTT_TOPIC_BASE + currentTopicId;
 
             encryptPayload(messageObj, currentGroupCode).then(encrypted => {
                 if (!encrypted) return;
@@ -3175,7 +3199,7 @@
             }
         }
 
-        function initMQTT(groupCode, brokerIndex = 0) {
+        async function initMQTT(groupCode, brokerIndex = 0) {
             if (connectionTimeoutId) {
                 clearTimeout(connectionTimeoutId);
                 connectionTimeoutId = null;
@@ -3192,7 +3216,8 @@
 
             cachedCryptoKey = null;
             currentGroupCode = groupCode || 'cervello-tunisia';
-            const topic = MQTT_TOPIC_BASE + currentGroupCode;
+            currentTopicId = await deriveTopicId(currentGroupCode);
+            const topic = MQTT_TOPIC_BASE + currentTopicId;
 
             const broker = MQTT_BROKERS[brokerIndex % MQTT_BROKERS.length];
             currentBrokerIndex = brokerIndex % MQTT_BROKERS.length;
@@ -3223,11 +3248,14 @@
                     mqttClient.subscribe(topic, { qos: 1 }, (err) => {
                         if (!err) {
                             console.log('Subscribed to topic successfully:', topic);
-                            showToast(t('toast_mqtt_connected', { room: currentGroupCode }), 'success');
+                            // Nel toast e nel badge mostriamo l'hash del topic, non il codice stanza in
+                            // chiaro: serve solo a confermare visivamente che le due schede sono sullo
+                            // stesso canale, il vero codice (il segreto) lo conosce solo chi lo digita.
+                            showToast(t('toast_mqtt_connected', { room: currentTopicId.slice(0, 8) }), 'success');
                             const syncStatusDiv = document.getElementById('collab-sync-status');
                             const topicCodeSpan = document.getElementById('collab-topic-code');
                             if (syncStatusDiv) syncStatusDiv.style.display = 'block';
-                            if (topicCodeSpan) topicCodeSpan.textContent = currentGroupCode;
+                            if (topicCodeSpan) topicCodeSpan.textContent = currentTopicId.slice(0, 8);
 
                             sendMQTTMessage({
                                 type: 'state_request'
@@ -3721,6 +3749,19 @@
             return sha256Fallback(text);
         }
 
+        // Mostra/nasconde in chiaro il codice stanza: resta nascosto di default perché è
+        // l'unico segreto che protegge davvero la privacy (da lui derivano sia il canale MQTT
+        // che la chiave di cifratura), quindi non deve restare leggibile sullo schermo per chi
+        // guarda di sfuggita o per uno screenshot.
+        function toggleRoomCodeVisibility() {
+            const input = document.getElementById('room-code-input');
+            const icon = document.getElementById('room-code-toggle-icon');
+            if (!input || !icon) return;
+            const reveal = input.type === 'password';
+            input.type = reveal ? 'text' : 'password';
+            icon.className = reveal ? 'bi bi-eye-slash' : 'bi bi-eye';
+        }
+
         async function submitLogin() {
             const username = document.getElementById('user-select').value;
             const pwdEl = document.getElementById('pwd-input');
@@ -3990,7 +4031,7 @@
                 });
         }
 
-        function addSimulatedEmail({ type, patientName, patientEmail, subject, body, tvId, otp, inviteUrl }) {
+        function addSimulatedEmail({ type, patientName, patientEmail, subject, body, tvId, otp, inviteUrl, realSend = true }) {
             const now = new Date();
             const time = now.toLocaleTimeString(currentLang === 'fr' ? 'fr-FR' : 'it-IT', { hour: '2-digit', minute: '2-digit' });
             const email = {
@@ -4018,7 +4059,11 @@
                 if (raw) emailJsConfig = JSON.parse(raw);
             } catch (_) { }
 
-            if (emailJsConfig && emailJsConfig.serviceId && emailJsConfig.templateId && emailJsConfig.publicKey) {
+            // realSend=false per le email il cui contenuto (tipicamente un codice OTP) è già mostrato
+            // direttamente a video nello stesso momento in cui viene generato: inviarlo anche per email
+            // non aggiunge nulla per chi la riceve, e con una quota EmailJS mensile limitata è uno spreco
+            // di richieste reali per un'informazione che il destinatario ha già sotto gli occhi.
+            if (realSend && emailJsConfig && emailJsConfig.serviceId && emailJsConfig.templateId && emailJsConfig.publicKey) {
                 console.log('Sending real email via EmailJS...', email);
                 // Il bottone inline (testo+link) viene rimosso del tutto dal testo semplice: nell'e-mail
                 // reale il bottone arriva già separatamente dal template tramite {{action_label}}/{{invite_url}},
@@ -4421,7 +4466,9 @@
                     subject: subject,
                     body: body,
                     tvId: tv.id,
-                    otp: otp
+                    otp: otp,
+                    // L'OTP è già mostrato qui sopra, in questo stesso modale: niente invio email reale.
+                    realSend: false
                 });
                 showEmailNotificationToast(email);
 
@@ -4629,9 +4676,10 @@
         // Connessione MQTT "usa e getta": pubblica un singolo messaggio e si disconnette.
         // Non riusa mqttClient/initMQTT perché quelli pilotano l'interfaccia del cruscotto medico,
         // qui invece serve solo una pubblicazione minima dalla pagina pubblica del paziente.
-        function publishPatientMqttMessage(room, envelope) {
+        async function publishPatientMqttMessage(room, envelope) {
+            const topicId = await deriveTopicId(room);
             return new Promise((resolve) => {
-                const topic = MQTT_TOPIC_BASE + room;
+                const topic = MQTT_TOPIC_BASE + topicId;
                 const broker = MQTT_BROKERS[0];
                 let settled = false;
                 const finish = () => {
@@ -4685,49 +4733,18 @@
                 console.error('Errore notifica MQTT dalla vista paziente:', err);
             }
 
-            let emailSent = false;
-            let emailConfigured = !!(ctx.pk && ctx.sid && ctx.tid && window.emailjs);
-            let emailFailedAfterRetries = false;
-            if (emailConfigured) {
-                try {
-                    const subject = t('email_subject_otp');
-                    const message = t('email_otp_unlocked_body', { code: otp }).replace(/<[^>]*>/g, '');
-                    await emailjsSendWithRetry(ctx.sid, ctx.tid, {
-                        to_email: ctx.patientEmail,
-                        to_name: ctx.patientName,
-                        subject: subject,
-                        message: message,
-                        otp_code: otp
-                    }, ctx.pk);
-                    emailSent = true;
-                } catch (err) {
-                    console.error('Errore invio OTP via EmailJS dalla vista paziente (dopo i tentativi):', err);
-                    emailFailedAfterRetries = true;
-                }
-            }
-
             document.getElementById('patient-consent-form').style.display = 'none';
 
-            if (emailSent || emailFailedAfterRetries) {
-                // Il codice viene mostrato qui stesso, nella stessa pagina: il paziente non deve
-                // più tornare nella propria casella di posta per leggerlo prima di firmare. Lo
-                // mostriamo anche se l'invio dell'e-mail è fallito dopo i tentativi: il medico ha
-                // comunque già ricevuto l'OTP sul proprio cruscotto (notifica inviata qui sopra,
-                // indipendente dall'invio email), quindi non ha senso bloccare il paziente su questa
-                // pagina senza nessun modo di proseguire.
-                ctx.otp = otp;
-                document.getElementById('patient-otp-instructions').textContent = emailFailedAfterRetries
-                    ? t('patient_otp_instructions_noemail')
-                    : t('patient_otp_instructions');
-                document.getElementById('patient-otp-code-display').textContent = otp;
-                document.getElementById('patient-otp-confirm-btn-text').textContent = t('patient_otp_confirm_btn');
-                document.getElementById('patient-otp-step').classList.remove('d-none');
-            } else {
-                const successEl = document.getElementById('patient-consent-success');
-                document.getElementById('patient-consent-success-text').textContent = t('patient_consent_success_noemail');
-                successEl.classList.remove('d-none');
-                markPatientConsentLinkUsed(ctx.tvId);
-            }
+            // Il codice viene mostrato direttamente qui, nella stessa pagina, nello stesso momento in
+            // cui viene generato: non ha senso spedirlo anche per email, il paziente lo ha già davanti
+            // (e con una quota EmailJS mensile limitata sarebbe una richiesta reale sprecata per
+            // un'informazione che il destinatario può già leggere). Il medico, dal suo lato, lo riceve
+            // comunque sul proprio cruscotto tramite la notifica inviata qui sopra.
+            ctx.otp = otp;
+            document.getElementById('patient-otp-instructions').textContent = t('patient_otp_instructions');
+            document.getElementById('patient-otp-code-display').textContent = otp;
+            document.getElementById('patient-otp-confirm-btn-text').textContent = t('patient_otp_confirm_btn');
+            document.getElementById('patient-otp-step').classList.remove('d-none');
         }
 
         async function patientVerifyOtp() {
@@ -5605,7 +5622,7 @@
                 if (statusDiv) {
                     statusDiv.style.display = 'block';
                     const topicCodeSpan = document.getElementById('collab-topic-code');
-                    if (topicCodeSpan) topicCodeSpan.textContent = currentGroupCode;
+                    if (topicCodeSpan) topicCodeSpan.textContent = (currentTopicId || '').slice(0, 8);
                 }
                 if (toggleText) toggleText.textContent = currentLang === 'fr' ? 'Désactiver le Tableau Collaboratif' : 'Disattiva Lavagna Collaborativa';
                 if (toggleBtn) {
