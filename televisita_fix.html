@@ -7742,8 +7742,10 @@
         // ---------------------------------------------------------------------------
         function generateMockCF(name) {
             if (!name) return '';
-            // Cerco se questo paziente ha già una televisita con un codice identificativo reale salvato
-            const tv = S.televisite.find(t => t.patient === name && t.cf);
+            // Cerco se questo paziente ha già una televisita con un codice identificativo reale salvato.
+            // Uso visibleTelevisite() e non S.televisite direttamente: una televisita Centro
+            // dell'altra struttura non deve far trapelare il codice fiscale del suo paziente qui.
+            const tv = visibleTelevisite().find(t => t.patient === name && t.cf);
             if (tv && tv.cf) return tv.cf.toUpperCase();
 
             // Altrimenti creo un codice fittizio per non lasciare il campo vuoto, prendendo le prime lettere del nome
@@ -8563,8 +8565,10 @@
             const select = document.getElementById('webmail-patient-select');
             if (!select) return;
 
-            // Costruisce la lista delle opzioni, senza preselezionare il primo paziente
-            const opts = (S.televisite || []).map(tv => {
+            // Costruisce la lista delle opzioni, senza preselezionare il primo paziente. Uso
+            // visibleTelevisite() e non S.televisite direttamente: senza questo filtro, una
+            // televisita Centro dell'altra struttura comparirebbe qui col nome del paziente.
+            const opts = visibleTelevisite().map(tv => {
                 const selected = tv.id === S.activeTvId ? 'selected' : '';
                 return `<option value="${tv.id}" ${selected}>${tv.patient}</option>`;
             });
