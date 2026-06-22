@@ -1905,6 +1905,7 @@
                             class="text-primary fw-semibold">EmailJS</a> per permettere al sistema (100% serverless) di
                         inviare e-mail reali direttamente alla casella del paziente.
                     </p>
+                    <div id="emailjs-config-source" class="small text-muted mb-3"></div>
                     <div class="mb-3">
                         <label for="emailjs-public-key" class="form-label small fw-semibold text-muted">Public Key (User
                             ID)</label>
@@ -2923,6 +2924,33 @@
                 emails: S.emails,
                 immReqSender: S.immReqSender
             };
+        }
+
+        // Configurazione EmailJS di default "di fabbrica": senza questa, ogni nuovo dominio/deploy
+        // (es. il Docker di Olomedia) parte con localStorage vuoto e le e-mail reali non partono finché
+        // qualcuno non rientra in Impostazioni a digitare di nuovo le 3 chiavi. Con un default imbustato
+        // nel codice, l'invio funziona da subito ovunque sia pubblicata l'app; chi vuole una casella
+        // diversa (es. una delle due strutture, quando saranno pronte le caselle dedicate) può comunque
+        // sovrascriverlo da Impostazioni: quel valore in localStorage ha sempre la precedenza su questo.
+        // La Public Key di EmailJS è pensata per stare in codice lato client (non è un segreto, a
+        // differenza di un'eventuale Private Key lato server, che qui non esiste).
+        const DEFAULT_EMAILJS_CONFIG = {
+            publicKey: 'v1V2lLUF0sjTkVbgE',
+            serviceId: 'service_ekiv0hd',
+            templateId: 'template_p95rg2w'
+        };
+
+        // Legge la configurazione EmailJS effettiva: quella salvata da un medico in Impostazioni se
+        // presente, altrimenti il default di fabbrica qui sopra.
+        function getEmailJsConfig() {
+            try {
+                const raw = localStorage.getItem('tv_emailjs_config');
+                if (raw) {
+                    const stored = JSON.parse(raw);
+                    if (stored && stored.serviceId && stored.templateId && stored.publicKey) return stored;
+                }
+            } catch (_) { }
+            return DEFAULT_EMAILJS_CONFIG;
         }
 
         let mqttClient = null;
@@ -4052,12 +4080,8 @@
             S.emails.unshift(email);
             syncState({ kind: 'email_received', emailId: email.id });
 
-            // Invio Reale via EmailJS (se configurato)
-            let emailJsConfig = null;
-            try {
-                const raw = localStorage.getItem('tv_emailjs_config');
-                if (raw) emailJsConfig = JSON.parse(raw);
-            } catch (_) { }
+            // Invio Reale via EmailJS (config del medico se presente, altrimenti il default di fabbrica)
+            const emailJsConfig = getEmailJsConfig();
 
             // realSend=false per le email il cui contenuto (tipicamente un codice OTP) è già mostrato
             // direttamente a video nello stesso momento in cui viene generato: inviarlo anche per email
@@ -4151,20 +4175,22 @@
         }
 
         function openEmailSettingsModal() {
-            let config = null;
+            let override = null;
             try {
                 const raw = localStorage.getItem('tv_emailjs_config');
-                if (raw) config = JSON.parse(raw);
+                if (raw) override = JSON.parse(raw);
             } catch (_) { }
 
-            if (config) {
-                document.getElementById('emailjs-public-key').value = config.publicKey || '';
-                document.getElementById('emailjs-service-id').value = config.serviceId || '';
-                document.getElementById('emailjs-template-id').value = config.templateId || '';
-            } else {
-                document.getElementById('emailjs-public-key').value = '';
-                document.getElementById('emailjs-service-id').value = '';
-                document.getElementById('emailjs-template-id').value = '';
+            const config = override || DEFAULT_EMAILJS_CONFIG;
+            document.getElementById('emailjs-public-key').value = config.publicKey || '';
+            document.getElementById('emailjs-service-id').value = config.serviceId || '';
+            document.getElementById('emailjs-template-id').value = config.templateId || '';
+
+            const sourceEl = document.getElementById('emailjs-config-source');
+            if (sourceEl) {
+                sourceEl.textContent = override
+                    ? '🔧 Configurazione personalizzata, salvata su questo browser.'
+                    : '✓ Configurazione predefinita di fabbrica: già attiva, valida su qualunque dispositivo o dominio senza bisogno di impostarla.';
             }
 
             const modal = new bootstrap.Modal(document.getElementById('emailSettingsModal'));
@@ -4176,11 +4202,18 @@
             const serviceId = document.getElementById('emailjs-service-id').value.trim();
             const templateId = document.getElementById('emailjs-template-id').value.trim();
 
-            const config = { publicKey, serviceId, templateId };
-            localStorage.setItem('tv_emailjs_config', JSON.stringify(config));
+            if (!publicKey && !serviceId && !templateId) {
+                // Campi vuoti: si rimuove la personalizzazione e si torna al default di fabbrica,
+                // invece di salvare una configurazione vuota che bloccherebbe l'invio.
+                localStorage.removeItem('tv_emailjs_config');
+                showToast('Configurazione personalizzata rimossa: si torna al default di fabbrica.', 'success');
+            } else {
+                const config = { publicKey, serviceId, templateId };
+                localStorage.setItem('tv_emailjs_config', JSON.stringify(config));
+                showToast('Configurazione e-mail salvata correttamente.', 'success');
+            }
 
             bootstrap.Modal.getInstance(document.getElementById('emailSettingsModal')).hide();
-            showToast('Configurazione e-mail salvata correttamente.', 'success');
         }
 
         function exportDataBackup() {
@@ -4261,12 +4294,6 @@
         // Costruisce il link pubblico che il paziente apre dalla sua e-mail reale per leggere il consenso
         // e sbloccare l'OTP da solo (senza login, senza backend: tutto lo stato necessario viaggia nell'URL).
         function buildPatientConsentUrl(tv, patientName, patientEmail) {
-            let emailJsConfig = null;
-            try {
-                const raw = localStorage.getItem('tv_emailjs_config');
-                if (raw) emailJsConfig = JSON.parse(raw);
-            } catch (_) { }
-
             const base = window.location.origin + window.location.pathname;
             const params = new URLSearchParams({
                 consent: '1',
@@ -4276,9 +4303,6 @@
                 email: patientEmail,
                 lang: currentLang
             });
-            if (emailJsConfig && emailJsConfig.publicKey) params.set('pk', emailJsConfig.publicKey);
-            if (emailJsConfig && emailJsConfig.serviceId) params.set('sid', emailJsConfig.serviceId);
-            if (emailJsConfig && emailJsConfig.templateId) params.set('tid', emailJsConfig.templateId);
             return `${base}?${params.toString()}`;
         }
 
@@ -4534,10 +4558,7 @@
                 tvId: params.get('tvId'),
                 room: params.get('room') || currentGroupCode,
                 patientName: params.get('name') || '',
-                patientEmail: params.get('email') || '',
-                pk: params.get('pk') || '',
-                sid: params.get('sid') || '',
-                tid: params.get('tid') || ''
+                patientEmail: params.get('email') || ''
             };
 
             document.getElementById('patient-consent-overlay').style.display = 'block';
