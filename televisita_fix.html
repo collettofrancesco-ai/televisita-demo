@@ -1960,6 +1960,25 @@
                         <input type="file" id="import-file-input" style="display:none;" accept=".json"
                             onchange="importDataBackup(event)">
                     </div>
+
+                    <div class="mt-3 pt-3 border-top">
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                            <span class="small fw-semibold text-dark"><i class="bi bi-arrow-repeat me-1"></i>Backup
+                                Automatico</span>
+                            <span id="auto-backup-status" class="small text-muted" style="font-size:0.7rem;"></span>
+                        </div>
+                        <p class="text-muted small mb-2 lh-sm" style="font-size:0.7rem;">
+                            Scegli una volta un file: da quel momento questo PC lo riscrive automaticamente ogni 10
+                            minuti con tutti i dati presenti qui (anche le televisite Centro, che non viaggiano
+                            altrove). Funziona solo su Chrome/Edge desktop.
+                        </p>
+                        <div class="d-flex gap-2">
+                            <button type="button" id="btn-auto-backup-toggle" class="btn btn-outline-success btn-sm flex-grow-1 py-1.5 fw-semibold"
+                                onclick="toggleAutoBackup()" style="font-size:0.75rem;">
+                                <i class="bi bi-play-fill me-1"></i> Attiva Backup Automatico
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer border-0 pt-0">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Chiudi</button>
@@ -4254,16 +4273,23 @@
             bootstrap.Modal.getInstance(document.getElementById('emailSettingsModal')).hide();
         }
 
+        // Dati completi del backup: usa getSharedStateForStorage() (lo stato locale per intero),
+        // non getShared() (che filtra via le televisite "Centro" perché non devono mai viaggiare
+        // sul topic MQTT condiviso). Un backup deve invece salvare tutto quello che c'è su questo
+        // PC, comprese le Centro: non hanno nessun'altra copia altrove, sono il dato più a rischio
+        // in caso di cache del browser svuotata o macchina sostituita.
+        function buildBackupData() {
+            const emailJsConfig = localStorage.getItem('tv_emailjs_config');
+            return {
+                shared: getSharedStateForStorage(),
+                emailjs: emailJsConfig ? JSON.parse(emailJsConfig) : null,
+                exportDate: new Date().toISOString()
+            };
+        }
+
         function exportDataBackup() {
             try {
-                const shared = getShared();
-                const emailJsConfig = localStorage.getItem('tv_emailjs_config');
-                const backupData = {
-                    shared: shared,
-                    emailjs: emailJsConfig ? JSON.parse(emailJsConfig) : null,
-                    exportDate: new Date().toISOString()
-                };
-
+                const backupData = buildBackupData();
                 const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -4327,6 +4353,160 @@
                 event.target.value = '';
             };
             reader.readAsText(file);
+        }
+
+        // ---------------------------------------------------------------------------
+        // BACKUP AUTOMATICO (File System Access API): senza un vero database, i dati di
+        // questo PC vivono solo nel suo localStorage. Con un permesso chiesto una volta sola,
+        // l'app può poi riscrivere automaticamente lo stesso file ogni 10 minuti, senza altre
+        // richieste — disponibile solo su Chrome/Edge desktop (Safari/Firefox non supportano
+        // questa API, vedi isFileSystemAccessSupported).
+        // ---------------------------------------------------------------------------
+        const AUTO_BACKUP_INTERVAL_MS = 10 * 60 * 1000;
+        let autoBackupFileHandle = null;
+        let autoBackupIntervalId = null;
+
+        function isFileSystemAccessSupported() {
+            return typeof window.showSaveFilePicker === 'function';
+        }
+
+        // Il file handle non si può salvare in localStorage (non è una stringa), ma è
+        // "structured-cloneable": IndexedDB lo accetta e lo restituisce intatto, permettendo di
+        // ritrovarlo anche dopo aver chiuso e riaperto il browser.
+        function openAutoBackupDb() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open('tv_autobackup_db', 1);
+                req.onupgradeneeded = () => { req.result.createObjectStore('handles'); };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function saveAutoBackupHandle(handle) {
+            const db = await openAutoBackupDb();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('handles', 'readwrite');
+                tx.objectStore('handles').put(handle, 'file');
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function loadAutoBackupHandle() {
+            const db = await openAutoBackupDb();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('handles', 'readonly');
+                const req = tx.objectStore('handles').get('file');
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function updateAutoBackupStatusUI(text) {
+            const el = document.getElementById('auto-backup-status');
+            if (el) el.textContent = text || '';
+            const btn = document.getElementById('btn-auto-backup-toggle');
+            if (!btn) return;
+            if (autoBackupIntervalId) {
+                btn.innerHTML = '<i class="bi bi-stop-fill me-1"></i> Disattiva Backup Automatico';
+                btn.className = 'btn btn-outline-danger btn-sm flex-grow-1 py-1.5 fw-semibold';
+            } else {
+                btn.innerHTML = '<i class="bi bi-play-fill me-1"></i> Attiva Backup Automatico';
+                btn.className = 'btn btn-outline-success btn-sm flex-grow-1 py-1.5 fw-semibold';
+            }
+        }
+
+        async function writeAutoBackup() {
+            if (!autoBackupFileHandle) return;
+            try {
+                const writable = await autoBackupFileHandle.createWritable();
+                await writable.write(JSON.stringify(buildBackupData(), null, 2));
+                await writable.close();
+                const now = new Date();
+                updateAutoBackupStatusUI('Ultimo backup: ' + now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }));
+            } catch (err) {
+                // Es. il file è stato spostato/eliminato, o il permesso è stato revocato dal
+                // browser: si segnala soltanto, senza fermare il timer (un disco esterno
+                // momentaneamente scollegato si potrebbe ricollegare prima del prossimo giro).
+                console.error('Errore nel backup automatico:', err);
+                updateAutoBackupStatusUI('⚠️ Errore nell\'ultimo backup automatico');
+            }
+        }
+
+        function startAutoBackupTimer() {
+            if (autoBackupIntervalId) clearInterval(autoBackupIntervalId);
+            autoBackupIntervalId = setInterval(writeAutoBackup, AUTO_BACKUP_INTERVAL_MS);
+            writeAutoBackup(); // primo salvataggio subito, non aspetta i primi 10 minuti
+            updateAutoBackupStatusUI('Backup automatico attivo');
+        }
+
+        async function toggleAutoBackup() {
+            if (!isFileSystemAccessSupported()) {
+                showToast(currentLang === 'fr'
+                    ? 'La sauvegarde automatique nécessite Chrome ou Edge sur ordinateur.'
+                    : 'Il backup automatico richiede Chrome o Edge su desktop.', 'warning');
+                return;
+            }
+
+            if (autoBackupIntervalId) {
+                // Disattiva solo il timer: il file scelto resta ricordato, riattivare in seguito
+                // non richiede di scegliere di nuovo un file (vedi più sotto).
+                clearInterval(autoBackupIntervalId);
+                autoBackupIntervalId = null;
+                updateAutoBackupStatusUI('Backup automatico disattivato');
+                return;
+            }
+
+            try {
+                // Riusa il file già scelto in precedenza (anche in una sessione passata), se il
+                // permesso è ancora concedibile: richiederlo qui va bene perché questa funzione
+                // parte sempre da un click reale dell'utente.
+                let handle = autoBackupFileHandle || await loadAutoBackupHandle();
+                if (handle) {
+                    const permission = await handle.requestPermission({ mode: 'readwrite' });
+                    if (permission !== 'granted') handle = null;
+                }
+                if (!handle) {
+                    handle = await window.showSaveFilePicker({
+                        suggestedName: 'backup_televisita_auto.json',
+                        types: [{ description: 'Backup TeleVisita', accept: { 'application/json': ['.json'] } }]
+                    });
+                }
+                autoBackupFileHandle = handle;
+                await saveAutoBackupHandle(handle);
+                startAutoBackupTimer();
+                showToast('🟢 Backup automatico attivato: salva su questo file ogni 10 minuti.', 'success');
+            } catch (err) {
+                // L'utente ha chiuso la finestra di selezione del file senza scegliere nulla:
+                // non è un errore da segnalare con un toast.
+                if (err.name !== 'AbortError') {
+                    console.error('Errore nell\'attivazione del backup automatico:', err);
+                    showToast('❌ Impossibile attivare il backup automatico.', 'danger');
+                }
+            }
+        }
+
+        // Al caricamento della pagina, ritenta di riprendere un backup automatico già configurato
+        // in una sessione precedente. Qui NON c'è un gesto dell'utente, quindi si può solo
+        // controllare il permesso (queryPermission, senza popup) e riprendere senza altre
+        // richieste se è già concesso; altrimenti si avvisa che va confermato di nuovo a mano.
+        async function tryResumeAutoBackup() {
+            if (!isFileSystemAccessSupported()) return;
+            try {
+                const handle = await loadAutoBackupHandle();
+                if (!handle) return;
+                const permission = await handle.queryPermission({ mode: 'readwrite' });
+                if (permission === 'granted') {
+                    autoBackupFileHandle = handle;
+                    startAutoBackupTimer();
+                } else {
+                    showToast(currentLang === 'fr'
+                        ? 'La sauvegarde automatique était active : cliquez à nouveau sur "Activer la sauvegarde automatique" dans les Paramètres pour la confirmer sur ce PC.'
+                        : 'Il backup automatico era attivo: clicca di nuovo "Attiva Backup Automatico" in Impostazioni per confermarlo su questo PC.', 'warning', 8000);
+                }
+            } catch (err) {
+                console.error('Errore nel ripristino del backup automatico:', err);
+            }
         }
 
         // Costruisce il link pubblico che il paziente apre dalla sua e-mail reale per leggere il consenso
@@ -8971,6 +9151,7 @@
             loadSharedState();
             applyTranslations();
             initDrop();
+            tryResumeAutoBackup();
 
             // Riapre il modale email se era stato chiuso per guardare il PDF
             const pdfModalEl = document.getElementById('pdfModal');
