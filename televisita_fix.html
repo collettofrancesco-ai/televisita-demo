@@ -5623,6 +5623,24 @@
         // tutti compressi in alto a sinistra, nel punto sbagliato rispetto all'altro schermo.
         let collabCanvasReady = false;
         let pendingIncomingDraws = [];
+        // Chi ha avviato la collaborazione (cliccando "Attiva Lavagna") è l'unico che misura
+        // davvero le dimensioni del canvas e le trasmette all'altro lato (azione 'canvas_size'),
+        // che le adotta senza rimisurare in autonomia. Prima di questa modifica entrambi i lati
+        // misuravano il proprio canvas in modo indipendente: anche dopo aver aspettato che il
+        // PDF finisse di caricare (vedi currentPdfReadyPromise), bastava una minima differenza
+        // tra i due browser (una scrollbar, un font caricato con un timing diverso, un margine
+        // di rendering) per ottenere due altezze leggermente diverse e quindi due "righelli"
+        // diversi su cui interpretare le stesse coordinate normalizzate: il segno appariva nel
+        // punto sbagliato sull'altro schermo. Con un'unica fonte di verità il problema non può
+        // più presentarsi, perché il "righello" è uno solo, condiviso davvero, non ricalcolato
+        // due volte alla cieca.
+        let isCollabHost = false;
+        // Ultime dimensioni concordate con l'host, conservate qui (non solo sull'elemento
+        // canvas) perché riaprire l'anteprima del documento ricrea da zero #collab-canvas
+        // (torna alle dimensioni di default): senza questo valore salvato a parte, chi non è
+        // host non avrebbe modo di sapere quale fosse la misura corretta appena concordata.
+        let lastAgreedCanvasWidth = 0;
+        let lastAgreedCanvasHeight = 0;
         // True quando il rendering del PDF (locale) non è andato a buon fine: in questo caso
         // l'altezza del documento non è nota in modo affidabile, quindi la collaborazione non
         // deve attivarsi, per evitare di disegnare su un'altezza diversa da quella dell'altro medico.
@@ -5651,7 +5669,7 @@
             showToast((currentLang === 'fr' ? 'Couleur du tableau définie : ' : 'Colore lavagna impostato: ') + color, 'info');
         }
 
-        function toggleCollaboration(docId) {
+        function toggleCollaboration(docId, isHost = true) {
             const canvas = document.getElementById('collab-canvas');
             const toolbar = document.getElementById('collab-toolbar');
             const statusDiv = document.getElementById('collab-sync-status');
@@ -5670,6 +5688,7 @@
                 }
                 // Attiva collaborazione
                 isCollaborating = true;
+                isCollabHost = isHost;
                 activeCollabDocId = docId;
                 if (canvas) canvas.style.display = 'block';
                 if (toolbar) toolbar.style.setProperty('display', 'flex', 'important');
@@ -5718,9 +5737,12 @@
             } else {
                 // Disattiva collaborazione
                 isCollaborating = false;
+                isCollabHost = false;
                 activeCollabDocId = null;
                 collabCanvasReady = false;
                 pendingIncomingDraws = [];
+                lastAgreedCanvasWidth = 0;
+                lastAgreedCanvasHeight = 0;
                 if (canvas) canvas.style.display = 'none';
                 if (toolbar) toolbar.style.setProperty('display', 'none', 'important');
                 if (statusDiv) statusDiv.style.display = 'none';
@@ -5751,12 +5773,12 @@
                 viewDocPreview(docId);
                 setTimeout(() => {
                     if (!isCollaborating) {
-                        toggleCollaboration(docId);
+                        toggleCollaboration(docId, false);
                     }
                 }, 400); // tempo di rendering del modal
             } else {
                 if (!isCollaborating) {
-                    toggleCollaboration(docId);
+                    toggleCollaboration(docId, false);
                 }
             }
         }
@@ -5767,9 +5789,12 @@
             } else if (action.kind === 'stop') {
                 if (isCollaborating) {
                     isCollaborating = false;
+                    isCollabHost = false;
                     activeCollabDocId = null;
                     collabCanvasReady = false;
                     pendingIncomingDraws = [];
+                    lastAgreedCanvasWidth = 0;
+                    lastAgreedCanvasHeight = 0;
                     const canvas = document.getElementById('collab-canvas');
                     const toolbar = document.getElementById('collab-toolbar');
                     const statusDiv = document.getElementById('collab-sync-status');
@@ -5817,6 +5842,21 @@
                 }
             } else if (action.kind === 'zoom') {
                 changeCollabZoom(action.width, false);
+            } else if (action.kind === 'canvas_size') {
+                // Solo chi non è host adotta le dimensioni ricevute: l'host le ha già impostate
+                // da sé (è la fonte), riapplicarle anche lì non farebbe danni ma è inutile.
+                if (isCollabHost) return;
+                lastAgreedCanvasWidth = action.width;
+                lastAgreedCanvasHeight = action.height;
+                const canvas = document.getElementById('collab-canvas');
+                // L'host (più rapido a misurare) può trasmettere questa misura prima che qui sia
+                // finita la propria sequenza di apertura del modale (rendering del PDF, attesa
+                // artificiale, ecc.): se il canvas non esiste ancora nel DOM non c'è nulla su cui
+                // applicarla subito. Tenendola comunque in lastAgreedCanvasWidth/Height, appena
+                // initCollabCanvas() la troverà pronta all'uso (vedi più sotto) invece di restare
+                // ad aspettare un secondo messaggio che potrebbe non arrivare mai più.
+                if (!canvas) return;
+                applyCollabCanvasSize(canvas, action.width, action.height);
             }
         }
 
@@ -5981,6 +6021,38 @@
 
             console.log('Canvas init: internal=', newCanvas.width, 'x', newCanvas.height, 'CSS=', rect.width, 'x', rect.height);
 
+            if (isCollabHost) {
+                // Chi ha avviato la collaborazione è l'unica fonte di verità sulle dimensioni
+                // del canvas: le misura ed è l'unico a trasmetterle all'altro lato, che le
+                // adotta senza rimisurare in autonomia (vedi il commento su isCollabHost).
+                lastAgreedCanvasWidth = newCanvas.width;
+                lastAgreedCanvasHeight = newCanvas.height;
+                const sizeAction = { kind: 'canvas_size', width: newCanvas.width, height: newCanvas.height };
+                bc.postMessage({ type: 'collab_action', action: sizeAction });
+                if (mqttClient && mqttClient.connected) {
+                    sendMQTTMessage({ type: 'collab_action', action: sizeAction });
+                }
+                markCollabCanvasReady();
+            } else if (lastAgreedCanvasWidth && lastAgreedCanvasHeight) {
+                // Si ha già una misura concordata con l'host per questa sessione di
+                // collaborazione (ancora attiva: si azzera solo quando la lavagna si ferma, vedi
+                // 'stop' in handleCollabAction) — es. una riapertura dell'anteprima, oppure il
+                // 'canvas_size' dell'host è arrivato in anticipo, prima che questo canvas esistesse
+                // ancora nel DOM. La si riapplica subito invece di restare in attesa di un secondo
+                // messaggio che l'host non avrebbe motivo di rispedire da solo. Un eventuale
+                // 'canvas_size' più recente (es. dopo un cambio di zoom in corso) arriverà a
+                // correggere il tutto comunque, vedi 'canvas_size' in handleCollabAction.
+                newCanvas.width = lastAgreedCanvasWidth;
+                newCanvas.height = lastAgreedCanvasHeight;
+                markCollabCanvasReady();
+            }
+            // Altrimenti (non host, prima attivazione, nessun 'canvas_size' arrivato ancora) il
+            // canvas resta a questa misura provvisoria (solo per avere qualcosa a schermo) finché
+            // non arriva l'azione 'canvas_size' dall'host: solo a quel punto viene segnato pronto
+            // e i tratti accodati nel frattempo vengono applicati (vedi handleCollabAction).
+        }
+
+        function markCollabCanvasReady() {
             collabCanvasReady = true;
             if (pendingIncomingDraws.length) {
                 const queued = pendingIncomingDraws;
@@ -5989,9 +6061,35 @@
             }
         }
 
+        // Applica al canvas (già esistente nel DOM) le dimensioni concordate con l'host e segna
+        // la lavagna pronta. Cambiare width/height svuota il bitmap del canvas: se c'era già un
+        // disegno in corso (es. dopo un cambio di zoom) lo si salva e lo si ridisegna scalato
+        // sulle nuove dimensioni, stessa tecnica già usata in changeCollabZoom.
+        function applyCollabCanvasSize(canvas, width, height) {
+            if (canvas.width === width && canvas.height === height) {
+                markCollabCanvasReady();
+                return;
+            }
+            const savedImage = collabCanvasReady ? canvas.toDataURL() : null;
+            canvas.width = width;
+            canvas.height = height;
+            if (savedImage) {
+                const img = new Image();
+                img.onload = function () {
+                    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                };
+                img.src = savedImage;
+            }
+            markCollabCanvasReady();
+        }
+
         function startCollabDraw(e) {
             const canvas = document.getElementById('collab-canvas');
             if (!canvas) return;
+            // Se non si è host, prima di disegnare bisogna aspettare le dimensioni canoniche
+            // dall'host (vedi 'canvas_size' in handleCollabAction): disegnare prima su una misura
+            // solo provvisoria è proprio la causa del bug "il segno appare altrove sull'altro PC".
+            if (!collabCanvasReady) return;
             const rect = canvas.getBoundingClientRect();
             // Scala le coordinate dal CSS pixel space al canvas pixel space
             const scaleX = canvas.width / rect.width;
