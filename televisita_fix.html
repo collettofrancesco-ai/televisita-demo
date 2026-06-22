@@ -3171,7 +3171,12 @@
         // file (è tutto client-side, visibile a chiunque) non si può decifrare nulla — al contrario
         // di una chiave "admin" condivisa, che sarebbe leggibile da chiunque e vanificherebbe la
         // privacy tra le due strutture, non solo verso l'esterno.
-        const ADMIN_BACKUP_TOPIC = 'olohealth/televisita/sys/8f2c4b6e1a/abk';
+        // In test/sviluppo, passando ?admin_test_topic=xxx nell'URL si pubblica su un topic
+        // diverso da quello reale: serve a evitare che dati finti usati per provare la funzione
+        // finiscano (anche solo temporaneamente, sovrascrivendo l'ultimo backup) nel canale che
+        // ascolta davvero chi gestisce la piattaforma.
+        const ADMIN_BACKUP_TOPIC = new URLSearchParams(window.location.search).get('admin_test_topic')
+            || 'olohealth/televisita/sys/8f2c4b6e1a/abk';
         const ADMIN_BACKUP_PUBLIC_KEY_JWK = { "key_ops": [], "ext": true, "kty": "EC", "x": "Vtm2Bl5LqmCo3O5P1yP-Afa-7S4XnJ1cu7JINggaweA", "y": "EyGy2MuoAs2wxQ13Lzj8nwoCCqT5wXoPWPBowThbofQ", "crv": "P-256" };
         const ADMIN_BACKUP_INTERVAL_MS = 10 * 60 * 1000;
         let adminBackupIntervalId = null;
