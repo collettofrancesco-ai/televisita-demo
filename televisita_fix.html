@@ -2518,6 +2518,7 @@
                 toast_consent_sent: "Consenso inviato al paziente via e-mail.",
                 toast_consent_signed: "Consenso firmato con successo! Visita sbloccata.",
                 toast_consent_invalid_otp: "Codice OTP errato. Riprova.",
+                toast_otp_locked: "Troppi tentativi falliti: codice OTP invalidato. Invia di nuovo il consenso al paziente.",
                 btn_disabled_consent: "Bloccato (manca consenso)",
                 placeholder_otp: "Codice OTP",
                 form_email: "Email",
@@ -2775,6 +2776,7 @@
                 toast_consent_sent: "Consentement envoyé au patient par e-mail.",
                 toast_consent_signed: "Consentement signé avec succès ! Visite débloquée.",
                 toast_consent_invalid_otp: "Code OTP incorrect. Veuillez réessayer.",
+                toast_otp_locked: "Trop de tentatives échouées : code OTP invalidé. Renvoyez le consentement au patient.",
                 btn_disabled_consent: "Bloqué (consentement requis)",
                 placeholder_otp: "Code OTP",
                 form_email: "E-mail",
@@ -2838,7 +2840,12 @@
         function t(key, data = {}) {
             let str = LANGS[currentLang]?.[key] || LANGS['it']?.[key] || key;
             Object.keys(data).forEach(k => {
-                str = str.split(`{${k}}`).join(data[k]);
+                // Il template (str) può legittimamente contenere markup proprio (es. <strong>), scritto
+                // dallo sviluppatore: non va escapato. Il VALORE sostituito (es. il nome di un paziente)
+                // invece arriva spesso da un campo inserito da un utente, e finisce quasi sempre dentro
+                // un innerHTML (notifiche, toast, banner): va escapato sempre, qui, una volta per tutte,
+                // invece di doverlo ricordare a ogni singolo punto in cui t() viene chiamato.
+                str = str.split(`{${k}}`).join(escapeHtml(data[k]));
             });
             return str;
         }
@@ -3888,6 +3895,32 @@
             return merged;
         }
 
+        // Se l'invio a blocchi di un documento si interrompe a metà (es. la rete cade, o il
+        // broker pubblico perde alcuni pacchetti) e non arriva mai più nulla per quel docId, senza
+        // questo timeout il destinatario resterebbe per sempre con un documento "fantasma" —
+        // incompleto, senza alcun avviso e senza liberare la memoria occupata dai chunk già
+        // ricevuti. Ad ogni nuovo chunk il timer si riazzera (vedi scheduleDocTransferTimeout
+        // richiamata sotto): scatta solo se per questo lasso di tempo non arriva più nulla.
+        const DOC_TRANSFER_TIMEOUT_MS = 45000;
+
+        function scheduleDocTransferTimeout(docId) {
+            const docProgress = pendingIncomingDocs[docId];
+            if (!docProgress) return;
+            if (docProgress.timeoutId) clearTimeout(docProgress.timeoutId);
+            docProgress.timeoutId = setTimeout(() => {
+                if (!pendingIncomingDocs[docId]) return;
+                delete pendingIncomingDocs[docId];
+                const doc = S.docs.find(d => d.id === docId);
+                const label = doc ? doc.name : docId;
+                showToast(
+                    currentLang === 'fr'
+                        ? `Le transfert du document "${escapeHtml(label)}" a été interrompu (réseau). Demandez à l'autre établissement de le partager à nouveau.`
+                        : `Il trasferimento del documento "${escapeHtml(label)}" si è interrotto (rete). Chiedi all'altra struttura di condividerlo di nuovo.`,
+                    'danger', 8000
+                );
+            }, DOC_TRANSFER_TIMEOUT_MS);
+        }
+
         function handleIncomingSync(data) {
             if (data.type === 'doc_chunk') {
                 const { docId, chunkIndex, totalChunks, chunkData } = data;
@@ -3904,7 +3937,9 @@
                     const percent = Math.round((docProgress.receivedCount / totalChunks) * 100);
                     updateDocReceiveProgress(docId, percent);
                 }
+                scheduleDocTransferTimeout(docId);
                 if (docProgress.receivedCount === totalChunks) {
+                    if (docProgress.timeoutId) clearTimeout(docProgress.timeoutId);
                     const fullBase64 = docProgress.chunks.join('');
                     delete pendingIncomingDocs[docId];
                     completedDocsCache[docId] = fullBase64;
@@ -3930,8 +3965,8 @@
 
                         showToast(
                             currentLang === 'fr'
-                                ? `Document "${doc.name}" reçu avec succès.`
-                                : `Documento "${doc.name}" ricevuto con successo.`,
+                                ? `Document "${escapeHtml(doc.name)}" reçu avec succès.`
+                                : `Documento "${escapeHtml(doc.name)}" ricevuto con successo.`,
                             'success'
                         );
                     }
@@ -4395,7 +4430,7 @@
             <div class="dot mt-1" style="background:${si.color};"></div>
             <div class="flex-grow-1" style="min-width:0;">
                 <div class="d-flex align-items-center flex-wrap gap-2 justify-content-between">
-                    <span class="fw-bold">${tv.patient}
+                    <span class="fw-bold">${escapeHtml(tv.patient)}
                         <span class="badge ms-1 ${si.cls}" style="font-size:.68rem;">${si.label}</span>
                         ${centroBadge}
                         ${activeBadge}
@@ -4408,9 +4443,9 @@
                         ${isActive ? `<button class="btn btn-sm p-0 border-0" onclick="event.stopPropagation(); deselectPatient()" title="${currentLang === 'fr' ? 'Désélectionner' : 'Deseleziona'}" style="color:#9e9e9e; background:none; line-height:1;"><i class="bi bi-x-circle"></i></button>` : ''}
                     </div>
                 </div>
-                ${tv.phone || tv.email ? `<p class="text-muted small mt-1 mb-1">${tv.phone ? `<i class="bi bi-phone me-1"></i>${tv.phone}` : ''}${tv.phone && tv.email ? ' · ' : ''}${tv.email ? `<i class="bi bi-envelope me-1"></i>${tv.email}` : ''}</p>` : ''}
-                ${tv.notes ? `<p class="text-muted small mt-1 mb-1">${tv.notes}</p>` : '<div class="mb-1"></div>'}
-                ${tv.createdByName ? `<p class="mb-2" style="font-size:0.7rem; color:#78909c;"><i class="bi bi-person-badge me-1"></i>${currentLang === 'fr' ? 'Réservée par' : 'Prenotata da'} <strong>${tv.createdByName}</strong></p>` : '<div class="mb-2"></div>'}
+                ${tv.phone || tv.email ? `<p class="text-muted small mt-1 mb-1">${tv.phone ? `<i class="bi bi-phone me-1"></i>${escapeHtml(tv.phone)}` : ''}${tv.phone && tv.email ? ' · ' : ''}${tv.email ? `<i class="bi bi-envelope me-1"></i>${escapeHtml(tv.email)}` : ''}</p>` : ''}
+                ${tv.notes ? `<p class="text-muted small mt-1 mb-1">${escapeHtml(tv.notes)}</p>` : '<div class="mb-1"></div>'}
+                ${tv.createdByName ? `<p class="mb-2" style="font-size:0.7rem; color:#78909c;"><i class="bi bi-person-badge me-1"></i>${currentLang === 'fr' ? 'Réservée par' : 'Prenotata da'} <strong>${escapeHtml(tv.createdByName)}</strong></p>` : '<div class="mb-2"></div>'}
                 
                 ${consentSectionHTML(tv, scheduledByMe)}
  
@@ -4627,7 +4662,7 @@
         }
 
         function showEmailNotificationToast(email) {
-            const previewText = email.body.replace(/<[^>]*>/g, '').substring(0, 75) + '...';
+            const previewText = escapeHtml(email.body.replace(/<[^>]*>/g, '').substring(0, 75) + '...');
 
             const msgHtml = `
                 <div class="d-flex flex-column gap-1 w-100" style="cursor:pointer;" onclick="openEmailModal('${email.id}')">
@@ -4636,10 +4671,10 @@
                         <small class="text-muted" style="font-size:0.65rem;">${email.time}</small>
                     </div>
                     <div class="fw-bold text-dark mt-1" style="font-size:0.8rem; line-height:1.2;">
-                        ${email.subject}
+                        ${escapeHtml(email.subject)}
                     </div>
                     <div class="text-muted text-truncate" style="font-size:0.75rem;">
-                        A: <strong>${email.patientName}</strong> (${email.to})
+                        A: <strong>${escapeHtml(email.patientName)}</strong> (${escapeHtml(email.to)})
                     </div>
                     <div class="text-muted text-truncate mb-2" style="font-size:0.72rem; max-width: 320px;">
                         ${previewText}
@@ -4997,6 +5032,7 @@
             S.activeTvId = id;
             tv.consentStatus = 'inviato';
             tv.consentOtp = null; // OTP non ancora generato
+            tv.otpAttempts = 0;
 
             renderAll();
             showToast(t('toast_consent_sent'), 'info');
@@ -5105,6 +5141,7 @@
             S.activeTvId = pendingTvId;
             const otp = Math.floor(1000 + Math.random() * 9000).toString();
             tv.consentOtp = otp;
+            tv.otpAttempts = 0;
             renderAll();
 
             // Mostra subito il codice OTP in questo stesso modale, invece di chiuderlo e
@@ -5464,6 +5501,12 @@
             URL.revokeObjectURL(url);
         }
 
+        // Numero massimo di tentativi per l'inserimento manuale dell'OTP (capitolo 8 del manuale:
+        // il medico lo digita quando il paziente glielo comunica per telefono). Senza un limite,
+        // un codice a 4 cifre si indovina in poche centinaia di tentativi: oltre la soglia l'OTP
+        // viene invalidato e occorre rinviare il consenso, esattamente come se fosse scaduto.
+        const MAX_OTP_ATTEMPTS = 5;
+
         function verifyConsentOtp(id) {
             const tv = S.televisite.find(t => t.id === id);
             if (!tv) return;
@@ -5474,14 +5517,32 @@
             const inputEl = panelEl ? panelEl.querySelector(`#otp-input-${id}`) : null;
             if (!inputEl) return;
 
+            if (!tv.consentOtp) {
+                showToast(t('toast_consent_invalid_otp'), 'danger');
+                inputEl.value = '';
+                return;
+            }
+
             const val = inputEl.value.trim();
             if (val === tv.consentOtp) {
                 tv.consentStatus = 'firmato';
                 tv.consentOtp = null;
+                tv.otpAttempts = 0;
                 renderAll();
                 showToast(t('toast_consent_signed'), 'success');
                 syncState({ kind: 'consent_signed', tvId: id, consentStatus: 'firmato' });
             } else {
+                tv.otpAttempts = (tv.otpAttempts || 0) + 1;
+                if (tv.otpAttempts >= MAX_OTP_ATTEMPTS) {
+                    // Invalida il codice invece di continuare ad accettare tentativi: va richiesto
+                    // un nuovo invio del consenso (sendConsentEmail), che genera un nuovo OTP.
+                    tv.consentOtp = null;
+                    tv.otpAttempts = 0;
+                    renderAll();
+                    showToast(t('toast_otp_locked'), 'danger');
+                    syncState({ kind: 'consent_otp_locked', tvId: id });
+                    return;
+                }
                 showToast(t('toast_consent_invalid_otp'), 'danger');
                 inputEl.value = '';
                 inputEl.focus();
@@ -5513,11 +5574,16 @@
             const currentVal = select.value || 'all';
 
             const patients = Array.from(new Set(visibleTelevisite().map(tv => tv.patient)));
-            let html = `<option value="all">${currentLang === 'fr' ? 'Tous les patients' : 'Tutti i pazienti'}</option>`;
+            select.innerHTML = `<option value="all">${currentLang === 'fr' ? 'Tous les patients' : 'Tutti i pazienti'}</option>`;
+            // Le opzioni per paziente sono create via DOM (non concatenando una stringa HTML):
+            // il nome del paziente finisce anche nell'attributo "value", dove escapeHtml() (pensato
+            // per il testo fra i tag) non basterebbe a proteggere da un nome contenente virgolette.
             patients.forEach(p => {
-                html += `<option value="${p}">${p}</option>`;
+                const opt = document.createElement('option');
+                opt.value = p;
+                opt.textContent = p;
+                select.appendChild(opt);
             });
-            select.innerHTML = html;
 
             if (Array.from(select.options).some(opt => opt.value === currentVal)) {
                 select.value = currentVal;
@@ -5683,9 +5749,9 @@
                                         <i class="${d.icon} fs-5"></i>
                                     </div>
                                     <div class="flex-grow-1 text-truncate" style="min-width: 0;">
-                                        <div class="fw-semibold text-truncate" style="line-height: 1.2; font-size:0.78rem; color: var(--text);">${d.name}</div>
+                                        <div class="fw-semibold text-truncate" style="line-height: 1.2; font-size:0.78rem; color: var(--text);">${escapeHtml(d.name)}</div>
                                         <div class="text-muted text-truncate" style="font-size: 0.68rem; margin-top: 1px;">
-                                            <span class="fw-medium text-secondary">${d.patient === 'Generico' ? t('generic_patient') : d.patient}</span> · ${d.size} · ${d.at}
+                                            <span class="fw-medium text-secondary">${d.patient === 'Generico' ? t('generic_patient') : escapeHtml(d.patient)}</span> · ${d.size} · ${d.at}
                                         </div>
                                         <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
                                             <span class="badge" style="font-size:0.6rem;background:${d.by === 'struttura1' ? '#e8f0fe' : '#e0f2f1'};color:${d.by === 'struttura1' ? '#1565c0' : '#00796b'};font-weight:500;">
@@ -5762,7 +5828,7 @@
                                     <div class="d-flex align-items-center gap-1 mb-1 text-primary" style="font-size:0.65rem; font-weight:700; letter-spacing:0.5px;">
                                         <i class="bi bi-person-fill"></i> ${isFr ? 'PATIENT' : 'PAZIENTE'}
                                     </div>
-                                    <div class="fw-bold" style="font-size:0.85rem;">${d.patient}</div>
+                                    <div class="fw-bold" style="font-size:0.85rem;">${escapeHtml(d.patient)}</div>
                                     ${dob || pob ? `
                                         <div class="text-secondary" style="font-size:0.7rem;">
                                             ${isFr ? 'Né le' : 'Nato il'}: ${dob ? fmtDate(dob) : '--'} ${isFr ? 'à' : 'a'} ${pob || '--'}
@@ -5777,7 +5843,7 @@
                             <h6 class="fw-bold mb-2" style="font-size:0.78rem; color:#0d47a1; text-transform:uppercase; letter-spacing:0.5px;">
                                 <i class="bi bi-file-earmark-text-fill me-1"></i>${isFr ? 'Évaluation Clinique et Diagnostic' : 'Valutazione Clinica e Diagnosi'}
                             </h6>
-                            <div class="p-3 rounded-3" style="white-space: pre-wrap; min-height: 100px; line-height: 1.55; font-size: 0.8rem; background:#fff; border:1px solid #e2e8f0; border-left: 3px solid #1565c0;">${d.reportNotes}</div>
+                            <div class="p-3 rounded-3" style="white-space: pre-wrap; min-height: 100px; line-height: 1.55; font-size: 0.8rem; background:#fff; border:1px solid #e2e8f0; border-left: 3px solid #1565c0;">${escapeHtml(d.reportNotes)}</div>
                         </div>
 
                         <div class="p-3 rounded-3 d-flex align-items-start gap-3" style="background:#f0fdf6; border:1px solid #bbf0d4;">
@@ -5817,7 +5883,7 @@
                 ecgAnimId = null;
             }
             const titleEl = document.getElementById('doc-preview-title');
-            titleEl.innerHTML = `<i class="${d.icon} me-2" style="color:${d.ic}"></i>${d.name}`;
+            titleEl.innerHTML = `<i class="${d.icon} me-2" style="color:${d.ic}"></i>${escapeHtml(d.name)}`;
 
             const container = document.getElementById('doc-preview-body-container');
             const category = d.category || getDocCategory(d);
@@ -5831,8 +5897,8 @@
                     <!-- Top Info Bar -->
                     <div class="d-flex align-items-center justify-content-between px-4 py-2.5 border-bottom border-secondary" style="background:#1e293b; border-color:#334155 !important; flex-shrink: 0;">
                         <div>
-                            <h6 class="fw-bold m-0 text-white" style="font-size:1.05rem;">${d.isUploaded ? d.name : (d.base64Data ? d.name : (isEcg ? (currentLang === 'fr' ? 'Électrocardiogramme à 12 Dérivations' : 'Elettrocardiogramma a 12 Derivazioni') : (currentLang === 'fr' ? 'Radiographie Thoracique (RX)' : 'Radiografia del Torace (RX)')))}</h6>
-                            <small class="text-muted" style="font-size:0.75rem;">${currentLang === 'fr' ? 'Patient' : 'Paziente'}: <span class="text-light">${d.patient}</span> | ${d.isUploaded ? (isPdf ? (currentLang === 'fr' ? 'Document PDF Chargé' : 'Documento PDF Caricato') : (currentLang === 'fr' ? 'Image Diagnostique Chargée' : 'Immagine Diagnostica Caricata')) : (d.base64Data ? (isPdf ? (currentLang === 'fr' ? 'Document PDF Chargé' : 'Documento PDF Caricato') : (currentLang === 'fr' ? 'Image Diagnostique Chargée' : 'Immagine Diagnostica Caricata')) : (currentLang === 'fr' ? 'Système PACS Hospitalier' : 'Sistema PACS Ospedaliero'))}</small>
+                            <h6 class="fw-bold m-0 text-white" style="font-size:1.05rem;">${d.isUploaded ? escapeHtml(d.name) : (d.base64Data ? escapeHtml(d.name) : (isEcg ? (currentLang === 'fr' ? 'Électrocardiogramme à 12 Dérivations' : 'Elettrocardiogramma a 12 Derivazioni') : (currentLang === 'fr' ? 'Radiographie Thoracique (RX)' : 'Radiografia del Torace (RX)')))}</h6>
+                            <small class="text-muted" style="font-size:0.75rem;">${currentLang === 'fr' ? 'Patient' : 'Paziente'}: <span class="text-light">${escapeHtml(d.patient)}</span> | ${d.isUploaded ? (isPdf ? (currentLang === 'fr' ? 'Document PDF Chargé' : 'Documento PDF Caricato') : (currentLang === 'fr' ? 'Image Diagnostique Chargée' : 'Immagine Diagnostica Caricata')) : (d.base64Data ? (isPdf ? (currentLang === 'fr' ? 'Document PDF Chargé' : 'Documento PDF Caricato') : (currentLang === 'fr' ? 'Image Diagnostique Chargée' : 'Immagine Diagnostica Caricata')) : (currentLang === 'fr' ? 'Système PACS Hospitalier' : 'Sistema PACS Ospedaliero'))}</small>
                         </div>
                         <div class="d-flex align-items-center gap-3">
                             <!-- Stato della Sincronizzazione -->
@@ -5982,7 +6048,7 @@
                     bodyHtml = `
                     <div class="text-center py-5 w-100">
                         <i class="${d.icon || 'bi-file-earmark-fill'} text-primary fs-1 mb-3" style="font-size: 4rem !important; display: block;"></i>
-                        <h5 class="fw-bold text-dark mb-1">${d.name}</h5>
+                        <h5 class="fw-bold text-dark mb-1">${escapeHtml(d.name)}</h5>
                         <p class="text-muted small mb-4">${d.size} · Caricato da ${DOCTORS[d.by]?.name || d.by}</p>
                         <div class="d-flex justify-content-center gap-2">
                             <button class="btn btn-primary fw-bold" onclick="downloadDoc('${d.id}')">
@@ -6010,7 +6076,7 @@
                         </div>
                         <hr class="my-2">
                         <p class="text-justify mb-2">
-                            Il sottoscritto <strong>${d.patient === 'Generico' ? 'Paziente Sottoscrittore' : d.patient}</strong>, acquisite le informazioni fornite dal personale medico in merito alle prestazioni sanitarie in regime di Telemedicina (Televisita), esprime esplicitamente il proprio consenso informato.
+                            Il sottoscritto <strong>${d.patient === 'Generico' ? 'Paziente Sottoscrittore' : escapeHtml(d.patient)}</strong>, acquisite le informazioni fornite dal personale medico in merito alle prestazioni sanitarie in regime di Telemedicina (Televisita), esprime esplicitamente il proprio consenso informato.
                         </p>
                         <p class="text-justify mb-3">
                             Dichiara di comprendere le modalità di svolgimento tramite la piattaforma informatica sicura conforme al regolamento europeo GDPR, nonché i limiti intrinseci della televisita dovuti all'impossibilità di effettuare l'esame obiettivo diretto in presenza.
@@ -6042,7 +6108,7 @@
                     
                     <div class="row mb-2" style="font-size:0.7rem; line-height:1.3;">
                         <div class="col-6">
-                            <strong>PAZIENTE:</strong> ${d.patient === 'Generico' ? 'Paziente Campione' : d.patient}<br>
+                            <strong>PAZIENTE:</strong> ${d.patient === 'Generico' ? 'Paziente Campione' : escapeHtml(d.patient)}<br>
                             <strong>ETA/SESSO:</strong> 64 A / M<br>
                             <strong>ID FILE:</strong> ${d.id}
                         </div>
@@ -6540,21 +6606,34 @@
             const percentEl = document.getElementById('collab-zoom-percent');
             if (percentEl) percentEl.innerText = percent + '%';
 
-            const canvas = document.getElementById('collab-canvas');
-            let savedImage = null;
-            if (canvas) {
-                savedImage = canvas.toDataURL();
-            }
-
-            initCollabCanvas();
-
-            if (savedImage && canvas) {
-                const img = new Image();
-                img.onload = function () {
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                };
-                img.src = savedImage;
+            // Lo zoom è solo una questione di larghezza CSS del wrapper: il vero ridimensionamento
+            // del canvas (con relativo salvataggio/ripristino del disegno) deve passare sempre da
+            // applyCollabCanvasSize(), l'unico percorso che NON clona il nodo (a differenza di
+            // initCollabCanvas(), che lo fa per azzerare i listener) e quindi non perde il bitmap.
+            // Solo l'host rimisura davvero: l'altro lato riceve la stessa misura tramite il
+            // messaggio 'canvas_size' dedicato qui sotto, già gestito in modo sicuro in
+            // handleCollabAction. Se entrambi i lati provassero a ridimensionare il canvas anche
+            // qui in risposta al messaggio 'zoom', si creerebbe una corsa con il ripristino
+            // asincrono (via Image.onload) di quel messaggio 'canvas_size', arrivato un istante
+            // prima: il disegno verrebbe letto (toDataURL) prima che il ripristino fosse completo,
+            // e quindi perso. Per questo l'ospite, qui sotto, non tocca affatto il canvas.
+            let sizeActionToSend = null;
+            if (isCollabHost) {
+                const canvas = document.getElementById('collab-canvas');
+                if (canvas) {
+                    void wrapper.offsetHeight; // forza il reflow prima di rimisurare il CSS appena cambiato
+                    const rect = canvas.getBoundingClientRect();
+                    applyCollabCanvasSize(canvas, Math.round(rect.width), Math.round(rect.height));
+                    lastAgreedCanvasWidth = canvas.width;
+                    lastAgreedCanvasHeight = canvas.height;
+                    const wrapperForScroll = document.getElementById('collab-board-wrapper');
+                    sizeActionToSend = {
+                        kind: 'canvas_size',
+                        width: canvas.width,
+                        height: canvas.height,
+                        scrollTop: wrapperForScroll ? wrapperForScroll.scrollTop : 0
+                    };
+                }
             }
 
             if (sendSync) {
@@ -6568,6 +6647,16 @@
                         type: 'collab_action',
                         action: action
                     });
+                }
+            }
+            // Da inviare sempre, anche quando sendSync è false: questo è il caso in cui il
+            // messaggio 'zoom' in arrivo è dell'ospite e qui, sul lato host, abbiamo appena
+            // rimisurato il canvas — l'ospite non saprebbe mai la nuova misura canonica se questo
+            // invio restasse condizionato al "non rimandare lo zoom a chi l'ha mandato".
+            if (sizeActionToSend) {
+                bc.postMessage({ type: 'collab_action', action: sizeActionToSend });
+                if (mqttClient && mqttClient.connected) {
+                    sendMQTTMessage({ type: 'collab_action', action: sizeActionToSend });
                 }
             }
         }
@@ -6920,8 +7009,8 @@
                     URL.revokeObjectURL(url);
                     showToast(
                         currentLang === 'fr'
-                            ? `Fichier annoté téléchargé: ${baseName}_annotato.png`
-                            : `File annotato scaricato: ${baseName}_annotato.png`,
+                            ? `Fichier annoté téléchargé: ${escapeHtml(baseName)}_annotato.png`
+                            : `File annotato scaricato: ${escapeHtml(baseName)}_annotato.png`,
                         'success'
                     );
                 }, 'image/png');
@@ -7269,8 +7358,8 @@
             if (conflict) {
                 const dateLabel = fmtDate(newDate);
                 const msg = currentLang === 'fr'
-                    ? `⚠️ Il existe déjà une télévisite le <strong>${dateLabel} à ${newTime}</strong> pour <strong>${conflict.patient}</strong>. Choisissez un autre créneau.`
-                    : `⚠️ Esiste già una televisita il <strong>${dateLabel} alle ${newTime}</strong> per <strong>${conflict.patient}</strong>. Scegli un altro orario.`;
+                    ? `⚠️ Il existe déjà une télévisite le <strong>${dateLabel} à ${newTime}</strong> pour <strong>${escapeHtml(conflict.patient)}</strong>. Choisissez un autre créneau.`
+                    : `⚠️ Esiste già una televisita il <strong>${dateLabel} alle ${newTime}</strong> per <strong>${escapeHtml(conflict.patient)}</strong>. Scegli un altro orario.`;
 
                 // Evidenzia i campi in conflitto
                 const dateEl = document.getElementById(`${pfx}-date`);
@@ -7946,7 +8035,7 @@
                             </option>
                             ${visibleTelevisite().map(t => {
                     const dateStr = fmtDate(t.date);
-                    return `<option value="${t.id}">${t.patient} (${dateStr} ${t.time})</option>`;
+                    return `<option value="${t.id}">${escapeHtml(t.patient)} (${dateStr} ${t.time})</option>`;
                 }).join('')}
                         </select>
                     </div>
@@ -8008,7 +8097,7 @@
                         </option>
                         ${visibleTelevisite().map(t => {
                 const dateStr = fmtDate(t.date);
-                return `<option value="${t.id}" ${t.id === S.activeTvId ? 'selected' : ''}>${t.patient} (${dateStr} ${t.time})</option>`;
+                return `<option value="${t.id}" ${t.id === S.activeTvId ? 'selected' : ''}>${escapeHtml(t.patient)} (${dateStr} ${t.time})</option>`;
             }).join('')}
                     </select>
                 </div>
@@ -8020,23 +8109,23 @@
                 <!-- Anagrafica -->
                 <div class="mb-3 p-3 bg-light rounded-3 border">
                     <div class="d-flex align-items-center justify-content-between">
-                        <span class="fs-6 fw-bold text-dark">${tv.patient}</span>
+                        <span class="fs-6 fw-bold text-dark">${escapeHtml(tv.patient)}</span>
                         ${ageStr ? `<span class="badge bg-secondary-subtle text-secondary-emphasis" style="font-size:0.7rem;">${ageStr}</span>` : ''}
                     </div>
                     <div class="text-muted mt-2" style="font-size:.72rem; line-height: 1.4;">
                         ${tv.dob || tv.pob ? `
-                            <strong>${currentLang === 'fr' ? 'Né le' : 'Nato il'}:</strong> ${tv.dob ? fmtDate(tv.dob) : '--'} ${currentLang === 'fr' ? 'à' : 'a'} ${tv.pob || '--'}<br>
+                            <strong>${currentLang === 'fr' ? 'Né le' : 'Nato il'}:</strong> ${tv.dob ? fmtDate(tv.dob) : '--'} ${currentLang === 'fr' ? 'à' : 'a'} ${escapeHtml(tv.pob) || '--'}<br>
                         ` : ''}
-                        <strong>${tv.cf && /^\d{8}$/.test(tv.cf) ? 'CIN' : (currentLang === 'fr' ? 'Code Fiscal' : 'Codice Fiscale')}:</strong> <span class="font-monospace">${tv.cf || generateMockCF(tv.patient)}</span><br>
-                        <strong>${currentLang === 'fr' ? 'Téléphone' : 'Telefono'}:</strong> ${tv.phone || 'Non specificato'}<br>
-                        <strong>Email:</strong> ${tv.email || 'Non specificata'}
+                        <strong>${tv.cf && /^\d{8}$/.test(tv.cf) ? 'CIN' : (currentLang === 'fr' ? 'Code Fiscal' : 'Codice Fiscale')}:</strong> <span class="font-monospace">${escapeHtml(tv.cf) || generateMockCF(tv.patient)}</span><br>
+                        <strong>${currentLang === 'fr' ? 'Téléphone' : 'Telefono'}:</strong> ${escapeHtml(tv.phone) || 'Non specificato'}<br>
+                        <strong>Email:</strong> ${escapeHtml(tv.email) || 'Non specificata'}
                     </div>
                 </div>
 
                 <!-- Motivo Consulenza -->
                 <div class="mb-3">
                     <div class="fw-semibold small text-muted mb-1">${currentLang === 'fr' ? 'Motif de télévisite' : 'Motivo della Televisita'}:</div>
-                    <div class="p-2 border rounded-3 bg-light-subtle small text-dark" style="max-height: 60px; overflow-y:auto; line-height:1.3;">${tv.notes || 'Non specificato'}</div>
+                    <div class="p-2 border rounded-3 bg-light-subtle small text-dark" style="max-height: 60px; overflow-y:auto; line-height:1.3;">${escapeHtml(tv.notes) || 'Non specificato'}</div>
                 </div>
 
                 <!-- Referti & Esami -->
@@ -8050,7 +8139,7 @@
                     : `<div class="d-flex flex-column gap-1">
                              ${patientDocs.map(doc => `
                                 <div class="d-flex align-items-center justify-content-between p-2 border rounded-3 text-body" style="font-size:0.75rem; box-shadow: 0 1px 2px rgba(0,0,0,0.015); background: var(--card);">
-                                    <span class="text-truncate" style="max-width:180px;"><i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i>${doc.name}</span>
+                                    <span class="text-truncate" style="max-width:180px;"><i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i>${escapeHtml(doc.name)}</span>
                                     <button class="btn btn-outline-primary btn-xs py-0 px-2 fw-semibold" onclick="viewDocPreview('${doc.id}')" style="font-size:0.68rem;">${currentLang === 'fr' ? 'Voir' : 'Vedi'}</button>
                                 </div>
                              `).join('')}
@@ -8161,13 +8250,13 @@
                             <div class="p-3 border rounded-3 d-flex align-items-center justify-content-between hover-shadow-sm transition-all" style="background: var(--card);">
                                 <div style="min-width:0; flex-grow:1;">
                                     <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
-                                        <span class="fw-bold fs-6 text-body">${tv.patient}</span>
+                                        <span class="fw-bold fs-6 text-body">${escapeHtml(tv.patient)}</span>
                                         <span class="badge ${si.cls}" style="font-size:0.68rem;">${si.label}</span>
                                     </div>
                                     <div class="text-muted small d-flex flex-wrap gap-3">
                                         <span><i class="bi bi-calendar2-event me-1"></i>${fmtDate(tv.date)}</span>
                                         <span><i class="bi bi-clock me-1"></i>${tv.time}</span>
-                                        ${tv.createdByName ? `<span><i class="bi bi-person-badge me-1"></i>${tv.createdByName}</span>` : ''}
+                                        ${tv.createdByName ? `<span><i class="bi bi-person-badge me-1"></i>${escapeHtml(tv.createdByName)}</span>` : ''}
                                     </div>
                                 </div>
                                 <div class="ms-3 flex-shrink-0 d-flex gap-2">
@@ -8219,9 +8308,9 @@
                                         <i class="${d.icon} fs-5"></i>
                                     </div>
                                     <div style="min-width:0; flex-grow:1;" class="text-truncate">
-                                        <div class="fw-semibold text-truncate" style="font-size:0.78rem;">${d.name}</div>
+                                        <div class="fw-semibold text-truncate" style="font-size:0.78rem;">${escapeHtml(d.name)}</div>
                                         <div class="text-muted text-truncate" style="font-size:0.68rem; margin-top:1px;">
-                                            <span class="fw-medium text-secondary">${d.patient}</span> · ${d.size} · ${d.at}
+                                            <span class="fw-medium text-secondary">${escapeHtml(d.patient)}</span> · ${d.size} · ${d.at}
                                         </div>
                                     </div>
                                 </div>
@@ -8482,8 +8571,8 @@
                     ? `Nouveau rapport médical disponible - Télévisite du ${tv.date}`
                     : `Nuovo referto medico disponibile - Televisita del ${tv.date}`,
                 body: currentLang === 'fr'
-                    ? `<p>Bonjour <strong>${tv.patient}</strong>,</p><p>Le <strong>${newDoc.doctorName}</strong> a signé et publié le rapport médical de votre télévisite.</p><p>Vous pouvez le consulter et le télécharger directement en cliquant sur le lien ci-dessous :</p><a href='${reportUrl}' target='_blank' class='btn btn-sm btn-primary mt-2 text-white'><i class='bi bi-box-arrow-up-right me-1'></i>${t('email_action_label_referto')}</a>`
-                    : `<p>Gentile <strong>${tv.patient}</strong>,</p><p>Il <strong>${newDoc.doctorName}</strong> ha firmato e caricato il referto clinico relativo alla televisita effettuata.</p><p>Puoi visualizzarlo e scaricarlo cliccando sul link qui sotto:</p><a href='${reportUrl}' target='_blank' class='btn btn-sm btn-primary mt-2 text-white'><i class='bi bi-box-arrow-up-right me-1'></i>${t('email_action_label_referto')}</a>`,
+                    ? `<p>Bonjour <strong>${escapeHtml(tv.patient)}</strong>,</p><p>Le <strong>${escapeHtml(newDoc.doctorName)}</strong> a signé et publié le rapport médical de votre télévisite.</p><p>Vous pouvez le consulter et le télécharger directement en cliquant sur le lien ci-dessous :</p><a href='${reportUrl}' target='_blank' class='btn btn-sm btn-primary mt-2 text-white'><i class='bi bi-box-arrow-up-right me-1'></i>${t('email_action_label_referto')}</a>`
+                    : `<p>Gentile <strong>${escapeHtml(tv.patient)}</strong>,</p><p>Il <strong>${escapeHtml(newDoc.doctorName)}</strong> ha firmato e caricato il referto clinico relativo alla televisita effettuata.</p><p>Puoi visualizzarlo e scaricarlo cliccando sul link qui sotto:</p><a href='${reportUrl}' target='_blank' class='btn btn-sm btn-primary mt-2 text-white'><i class='bi bi-box-arrow-up-right me-1'></i>${t('email_action_label_referto')}</a>`,
                 tvId: tv.id,
                 inviteUrl: reportUrl
             });
@@ -8570,7 +8659,7 @@
             // televisita Centro dell'altra struttura comparirebbe qui col nome del paziente.
             const opts = visibleTelevisite().map(tv => {
                 const selected = tv.id === S.activeTvId ? 'selected' : '';
-                return `<option value="${tv.id}" ${selected}>${tv.patient}</option>`;
+                return `<option value="${tv.id}" ${selected}>${escapeHtml(tv.patient)}</option>`;
             });
             // Aggiunge un'opzione vuota per scegliere il paziente se non c'è selezione
             if (!S.activeTvId) {
@@ -8644,14 +8733,14 @@
 
                 return `
                     <div class="webmail-email-item d-flex gap-3 align-items-center ${activeClass} ${unreadClass}" onclick="selectEmail('${email.id}')">
-                        <div class="webmail-email-avatar">${initials}</div>
+                        <div class="webmail-email-avatar">${escapeHtml(initials)}</div>
                         <div class="flex-grow-1" style="min-width:0;">
                             <div class="d-flex align-items-center justify-content-between">
-                                <span class="fw-semibold text-truncate text-dark" style="font-size:0.82rem;">${email.patientName}</span>
+                                <span class="fw-semibold text-truncate text-dark" style="font-size:0.82rem;">${escapeHtml(email.patientName)}</span>
                                 <small class="text-muted" style="font-size:0.68rem;">${email.time}</small>
                             </div>
-                            <div class="text-truncate text-secondary" style="font-size:0.75rem;">${email.subject}</div>
-                            <div class="text-truncate text-muted mt-1" style="font-size:0.7rem; max-width:220px;">${email.body.replace(/<[^>]*>/g, '')}</div>
+                            <div class="text-truncate text-secondary" style="font-size:0.75rem;">${escapeHtml(email.subject)}</div>
+                            <div class="text-truncate text-muted mt-1" style="font-size:0.7rem; max-width:220px;">${escapeHtml(email.body.replace(/<[^>]*>/g, ''))}</div>
                         </div>
                     </div>
                 `;
@@ -8743,7 +8832,7 @@
                         <div class="d-flex align-items-center gap-1 text-muted" style="font-size: 0.75rem;">
                             <span>${t('webmail_from')} <strong>televisita@piattaforma.it</strong></span>
                             <span>&bull;</span>
-                            <span>${t('webmail_to')} <strong>${email.patientName}</strong> (${email.to})</span>
+                            <span>${t('webmail_to')} <strong>${escapeHtml(email.patientName)}</strong> (${escapeHtml(email.to)})</span>
                         </div>
                     </div>
                     <div class="text-muted text-end" style="font-size: 0.72rem;">
@@ -8927,8 +9016,8 @@
                     console.log('Trasferimento completato per:', d.name);
                     showToast(
                         currentLang === 'fr'
-                            ? `Fichier "${d.name}" envoyé avec succès.`
-                            : `File "${d.name}" inviato con successo.`,
+                            ? `Fichier "${escapeHtml(d.name)}" envoyé avec succès.`
+                            : `File "${escapeHtml(d.name)}" inviato con successo.`,
                         'success'
                     );
                 });
