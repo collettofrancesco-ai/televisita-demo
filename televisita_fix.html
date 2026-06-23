@@ -3823,14 +3823,39 @@
             }
         }
 
+        // True dopo aver già avvisato l'utente di una scrittura locale fallita (in genere quota
+        // localStorage superata, es. troppi documenti caricati come Base64): evita di mostrare lo
+        // stesso avviso ad ogni singola azione finché il problema non si risolve (es. cancellando
+        // qualche documento) o la pagina non viene ricaricata.
+        let localStorageQuotaWarningShown = false;
+        function persistTvState(storageState) {
+            try {
+                localStorage.setItem('tv_state', JSON.stringify(storageState));
+                localStorageQuotaWarningShown = false;
+            } catch (err) {
+                // Senza questo avviso, un salvataggio locale che fallisce per spazio esaurito
+                // passerebbe del tutto inosservato: l'app continuerebbe a funzionare nella sessione
+                // corrente (i dati restano in memoria), ma andrebbero persi al primo ricaricamento
+                // della pagina o riavvio del browser, senza che nessuno se ne accorga prima.
+                console.error('Errore nel salvataggio locale (probabile quota localStorage superata):', err);
+                if (!localStorageQuotaWarningShown) {
+                    localStorageQuotaWarningShown = true;
+                    showCenteredAlert(currentLang === 'fr'
+                        ? '⚠️ <b>Espace de stockage local plein.</b> Les dernières modifications risquent de ne pas être enregistrées de façon permanente sur cet appareil (souvent causé par des documents trop volumineux). Exportez immédiatement un backup et supprimez les documents inutiles.'
+                        : '⚠️ <b>Spazio di archiviazione locale esaurito.</b> Le ultime modifiche rischiano di non essere salvate in modo permanente su questo dispositivo (spesso causato da documenti troppo grandi). Esporta subito un backup ed elimina i documenti non necessari.',
+                        'danger');
+                }
+            }
+        }
+
         function syncState(event) {
             if (event && !event.id) {
                 event.id = 'ev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
             }
-            
+
             // Salva lo stato completo (inclusi i file Base64) nel localStorage locale per persistenza
             const storageState = getSharedStateForStorage();
-            try { localStorage.setItem('tv_state', JSON.stringify(storageState)); } catch (_) { }
+            persistTvState(storageState);
             
             // Notifica i tab locali dello stesso browser
             bc.postMessage({ shared: storageState, event: event || null });
@@ -3998,7 +4023,7 @@
                         tv.consentStatus = 'firmato';
                         tv.consentOtp = null;
                         renderAll();
-                        try { localStorage.setItem('tv_state', JSON.stringify(getSharedStateForStorage())); } catch (_) { }
+                        persistTvState(getSharedStateForStorage());
                         showToast(t('toast_consent_signed'), 'success');
                         addNotif('bi-check-circle-fill', t('email_simulated_title', { patient: tv.patient }), t('toast_consent_signed'), 'incoming');
                         flashBell();
@@ -4006,7 +4031,7 @@
                 } else if (tv.consentStatus === 'inviato' && !tv.consentOtp) {
                     tv.consentOtp = data.otp;
                     renderAll();
-                    try { localStorage.setItem('tv_state', JSON.stringify(getSharedStateForStorage())); } catch (_) { }
+                    persistTvState(getSharedStateForStorage());
                     showToast(t('toast_otp_unlocked'), 'success');
                     addNotif('bi-envelope-fill', t('email_simulated_title', { patient: tv.patient }), t('email_otp_unlocked_body', { code: data.otp }), 'incoming');
                     flashBell();
