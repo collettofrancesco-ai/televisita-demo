@@ -5377,7 +5377,7 @@
             };
 
             const signatureHtml = `
-                <div class="fw-semibold text-primary" style="font-size:0.85rem;">${d.doctorName}</div>
+                <div class="fw-semibold text-primary" style="font-size:0.85rem;">${escapeHtml(d.doctorName)}</div>
                 <div class="text-success" style="font-size:0.62rem;"><i class="bi bi-patch-check-fill me-1"></i>${currentLang === 'fr' ? 'Signature vérifiée' : 'Firma verificata'}</div>
             `;
 
@@ -5873,9 +5873,19 @@
         // visivamente identici. signatureHtml differisce: firma vera nell'anteprima del medico,
         // testo "firmato elettronicamente da" nella pagina pubblica (niente immagini nell'URL).
         function buildReportCardHtml(d, signatureHtml) {
-            const dob = d.patientDob || '';
-            const pob = d.patientPob || '';
-            const cf = d.patientCf || '';
+            // Tutti i campi qui sotto possono arrivare grezzi dai parametri URL della pagina
+            // pubblica del paziente (initPatientReportView, senza login né validazione) oltre
+            // che dai campi liberi del modulo di prenotazione (luogo di nascita, codice
+            // fiscale): vanno sempre sanificati, anche se in pratica contengono quasi sempre
+            // solo testo semplice. fmtDate() non sanifica da sola una stringa non valida, quindi
+            // anche dob va escapato PRIMA di passarci attraverso.
+            const docId = escapeHtml(d.id || '');
+            const at = escapeHtml(d.at || '');
+            const doctorName = escapeHtml(d.doctorName || '');
+            const verificationCode = escapeHtml(d.verificationCode || '');
+            const dob = escapeHtml(d.patientDob || '');
+            const pob = escapeHtml(d.patientPob || '');
+            const cf = escapeHtml(d.patientCf || '');
             const isFr = currentLang === 'fr';
             return `
                 <div class="bg-white shadow-sm rounded-4 overflow-hidden" style="font-family: 'Inter', system-ui, sans-serif; color: #1e293b; max-width:760px; width:100%; font-size:0.82rem; margin:0 auto; border: 1px solid #e2e8f0;">
@@ -5884,8 +5894,8 @@
                         <div class="d-flex align-items-center justify-content-between mb-3 pb-3 border-bottom">
                             <img src="${OLOMEDIA_LOGO_BASE64}" alt="Olomedia" style="height:30px;">
                             <div class="text-end" style="font-size:0.65rem; line-height:1.3; color:#64748b;">
-                                <div><strong>${isFr ? 'Code Doc.' : 'Codice Doc.'}:</strong> <span class="font-monospace">${d.id}</span></div>
-                                <div><strong>${isFr ? 'Date' : 'Data'}:</strong> ${d.at}</div>
+                                <div><strong>${isFr ? 'Code Doc.' : 'Codice Doc.'}:</strong> <span class="font-monospace">${docId}</span></div>
+                                <div><strong>${isFr ? 'Date' : 'Data'}:</strong> ${at}</div>
                             </div>
                         </div>
 
@@ -5899,7 +5909,7 @@
                                     <div class="d-flex align-items-center gap-1 mb-1 text-primary" style="font-size:0.65rem; font-weight:700; letter-spacing:0.5px;">
                                         <i class="bi bi-person-badge-fill"></i> ${isFr ? 'MÉDECIN RÉFÉRENT' : 'MEDICO REFERTANTE'}
                                     </div>
-                                    <div class="fw-bold" style="font-size:0.85rem;">${d.doctorName}</div>
+                                    <div class="fw-bold" style="font-size:0.85rem;">${doctorName}</div>
                                     <div class="text-secondary" style="font-size:0.7rem;">Cod. Reg. Med: 823901/AM</div>
                                 </div>
                             </div>
@@ -5937,8 +5947,8 @@
                                 </div>
                                 <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 pt-2 border-top border-success-subtle">
                                     <div>
-                                        <strong>${isFr ? 'Identifiant FEA' : 'Identificativo FEA'}:</strong> <span class="font-monospace text-secondary">${d.verificationCode}</span><br>
-                                        <strong>${isFr ? "Date d'apposition" : 'Data Apposizione'}:</strong> ${d.at}
+                                        <strong>${isFr ? 'Identifiant FEA' : 'Identificativo FEA'}:</strong> <span class="font-monospace text-secondary">${verificationCode}</span><br>
+                                        <strong>${isFr ? "Date d'apposition" : 'Data Apposizione'}:</strong> ${at}
                                     </div>
                                     <div class="text-center bg-white p-2 rounded-3 border" style="min-width: 140px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
                                         <div class="text-muted" style="font-size: 0.5rem; text-transform: uppercase; letter-spacing:0.3px;">${isFr ? 'Signature du Médecin' : 'Firma del Medico'}</div>
@@ -7484,6 +7494,20 @@
         // ---------------------------------------------------------------------------
         // AZIONI DI PROGRAMMAZIONE
         // ---------------------------------------------------------------------------
+        // Una televisita dura realisticamente più di pochi minuti: il vecchio controllo
+        // bloccava solo un orario IDENTICO, lasciando passare due prenotazioni a distanza di
+        // pochi minuti l'una dall'altra (es. 10:00 e 10:05), che si sovrappongono comunque nella
+        // pratica clinica. Calcola la differenza reale in minuti tra le due date/ore (gestendo
+        // correttamente anche il caso limite a cavallo di mezzanotte) invece di un confronto
+        // testuale esatto.
+        const MIN_VISIT_GAP_MINUTES = 30;
+        function minutesBetweenVisits(date1, time1, date2, time2) {
+            const d1 = new Date(`${date1}T${time1}`);
+            const d2 = new Date(`${date2}T${time2}`);
+            if (isNaN(d1) || isNaN(d2)) return Infinity;
+            return Math.abs(d1 - d2) / 60000;
+        }
+
         function scheduleVisit(e, formVariant) {
             e.preventDefault();
             const pfx = formVariant === 's2' ? 'f2' : 'f';
@@ -7492,16 +7516,15 @@
 
             // Controlla conflitti di data/ora (escluse visite completate o rifiutate)
             const conflict = S.televisite.find(tv =>
-                tv.date === newDate &&
-                tv.time === newTime &&
                 tv.status !== 'completata' &&
-                tv.status !== 'rifiutata'
+                tv.status !== 'rifiutata' &&
+                minutesBetweenVisits(tv.date, tv.time, newDate, newTime) < MIN_VISIT_GAP_MINUTES
             );
             if (conflict) {
-                const dateLabel = fmtDate(newDate);
+                const dateLabel = fmtDate(conflict.date);
                 const msg = currentLang === 'fr'
-                    ? `⚠️ Il existe déjà une télévisite le <strong>${dateLabel} à ${newTime}</strong> pour <strong>${escapeHtml(conflict.patient)}</strong>. Choisissez un autre créneau.`
-                    : `⚠️ Esiste già una televisita il <strong>${dateLabel} alle ${newTime}</strong> per <strong>${escapeHtml(conflict.patient)}</strong>. Scegli un altro orario.`;
+                    ? `⚠️ Il existe déjà une télévisite le <strong>${dateLabel} à ${conflict.time}</strong> pour <strong>${escapeHtml(conflict.patient)}</strong>, trop proche du créneau choisi (minimum ${MIN_VISIT_GAP_MINUTES} minutes d'écart). Choisissez un autre créneau.`
+                    : `⚠️ Esiste già una televisita il <strong>${dateLabel} alle ${conflict.time}</strong> per <strong>${escapeHtml(conflict.patient)}</strong>, troppo vicina all'orario scelto (minimo ${MIN_VISIT_GAP_MINUTES} minuti di distanza). Scegli un altro orario.`;
 
                 // Evidenzia i campi in conflitto
                 const dateEl = document.getElementById(`${pfx}-date`);

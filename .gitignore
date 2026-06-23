@@ -3,3 +3,7 @@ televisita.html
 Avvia_Server.command
 manuale/
 .DS_Store
+
+# Cartelle di backup automatico locale: contengono dati sanitari reali, non vanno mai committate
+Backup Televisita/
+backup_televisita_*.json
