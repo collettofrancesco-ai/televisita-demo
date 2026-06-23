@@ -9358,6 +9358,30 @@
             showToast(currentLang === 'fr' ? 'Démo interrompue.' : 'Demo interrotta.', 'warning');
         }
 
+        // La demo data/ora resta sempre su "oggi" (per restare narrativamente coerente con "una
+        // televisita di oggi"), quindi a ogni nuova esecuzione nella stessa sessione l'unico modo
+        // per non scontrarsi con gli orari delle esecuzioni precedenti è verificare davvero
+        // l'assenza di conflitti (stessa soglia di scheduleVisit), non solo sperare che un orario
+        // casuale non coincida: con la finestra minima di 30 minuti introdotta lì, una semplice
+        // randomizzazione senza controllo avrebbe una probabilità di collisione tutt'altro che
+        // trascurabile già dalla seconda esecuzione della demo.
+        function findFreeDemoTime() {
+            const today = todayStr();
+            for (let attempt = 0; attempt < 50; attempt++) {
+                const candidate = `${String(10 + Math.floor(Math.random() * 8)).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`;
+                const conflict = S.televisite.some(tv =>
+                    tv.status !== 'completata' &&
+                    tv.status !== 'rifiutata' &&
+                    minutesBetweenVisits(tv.date, tv.time, today, candidate) < MIN_VISIT_GAP_MINUTES
+                );
+                if (!conflict) return candidate;
+            }
+            // Tentativi esauriti (estremamente improbabile): nel peggiore dei casi questa singola
+            // esecuzione della demo verrà bloccata dal controllo conflitti come una vera
+            // prenotazione, con un avviso visibile invece di un fallimento silenzioso.
+            return `${String(10 + Math.floor(Math.random() * 8)).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`;
+        }
+
         function runDemo() {
             stopDemo(); // Annulla un'eventuale demo già in corso prima di ripartire da zero
 
@@ -9395,8 +9419,8 @@
                 // Il tipo di televisita non ha più un valore predefinito (va scelto consapevolmente
                 // ogni volta): la demo lo seleziona esplicitamente come farebbe il medico.
                 document.getElementById('f-visit-mode').value = 'network';
-                // Orario randomico per evitare conflitti con eventuali precedenti esecuzioni della demo nella stessa sessione
-                document.getElementById('f-time').value = `${String(10 + Math.floor(Math.random() * 8)).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`;
+                // Orario libero (senza conflitti) per evitare scontri con eventuali precedenti esecuzioni della demo nella stessa sessione
+                document.getElementById('f-time').value = findFreeDemoTime();
                 const notesEl = document.getElementById('f-notes');
                 if (notesEl) notesEl.value = currentLang === 'fr' ? 'Contrôle post-opératoire' : 'Controllo post-operatorio';
                 document.getElementById('sched-form').requestSubmit();
@@ -9623,7 +9647,7 @@
                 document.getElementById('f2-email').value = 'sara.greco@example.com';
                 document.getElementById('f2-phone').value = '+39 333 555 1212';
                 document.getElementById('f2-date').value = todayStr();
-                document.getElementById('f2-time').value = `${String(10 + Math.floor(Math.random() * 8)).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`;
+                document.getElementById('f2-time').value = findFreeDemoTime();
                 document.getElementById('f2-visit-mode').value = 'centro';
                 const notesEl2 = document.getElementById('f2-notes');
                 if (notesEl2) notesEl2.value = currentLang === 'fr' ? 'Suivi de routine' : 'Controllo di routine';
