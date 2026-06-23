@@ -8278,7 +8278,7 @@
                     </div>
                     <div class="flex-grow-1 d-flex flex-column" style="min-height: 200px;">
                         <label class="form-label fw-semibold text-muted mb-2">${currentLang === 'fr' ? 'Note de session' : 'Note della sessione'}</label>
-                        <textarea id="emr-notes-textarea" class="form-control form-control-sm flex-grow-1 mb-3" style="min-height: 250px; font-size:0.78rem;" placeholder="${currentLang === 'fr' ? 'Saisissez vos notes de consultation...' : 'Scrivi note del consulto con il collega...'}">${S.activeConsultNotes || ''}</textarea>
+                        <textarea id="emr-notes-textarea" class="form-control form-control-sm flex-grow-1 mb-3" style="min-height: 250px; font-size:0.78rem;" placeholder="${currentLang === 'fr' ? 'Saisissez vos notes de consultation...' : 'Scrivi note del consulto con il collega...'}">${escapeHtml(S.activeConsultNotes || '')}</textarea>
                         <button class="btn btn-success btn-sm w-100 fw-bold" onclick="saveConsultNotes()">
                             <i class="bi bi-save me-1"></i> ${currentLang === 'fr' ? 'Enregistrer les notes' : 'Salva Note Consulto'}
                         </button>
@@ -8382,7 +8382,7 @@
                             <i class="bi bi-mic-fill text-danger fs-6"></i> ${currentLang === 'fr' ? 'Dictée Vocale' : 'Dettatura Vocale'}
                         </button>
                     </div>
-                    <textarea id="emr-notes-textarea" class="form-control form-control-sm mb-2" rows="3" placeholder="${currentLang === 'fr' ? 'Saisissez vos observations...' : 'Scrivi note cliniche, diagnosi e terapia durante la televisita...'}">${tv.reportNotes || ''}</textarea>
+                    <textarea id="emr-notes-textarea" class="form-control form-control-sm mb-2" rows="3" placeholder="${currentLang === 'fr' ? 'Saisissez vos observations...' : 'Scrivi note cliniche, diagnosi e terapia durante la televisita...'}">${escapeHtml(tv.reportNotes || '')}</textarea>
                     <div class="row g-2">
                         <div class="col-6">
                             <button class="btn btn-outline-secondary btn-sm w-100 fw-semibold text-truncate" onclick="saveEMRNotes('${tv.id}')">
