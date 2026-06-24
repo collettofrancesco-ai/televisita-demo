@@ -6415,6 +6415,19 @@
                     ${buildReportCardHtml(d, signatureHtml)}
                 </div>`;
             } else if (category === 'consenso') {
+                // Lo "Stato Sottoscrizione" deve riflettere lo stato VERO del consenso (vedi
+                // tv.consentStatus), non essere sempre "FIRMATO E APPROVATO": questo documento
+                // viene creato automaticamente già al momento della programmazione della
+                // televisita (vedi scheduleVisit), molto prima che il paziente lo riceva o lo
+                // firmi davvero. Mostrare uno stato finto fisso sarebbe un'informazione clinica
+                // falsa, proprio nel documento che certifica il consenso del paziente.
+                const relatedTv = S.televisite.find(t => t.id === d.tvId);
+                const realStatus = relatedTv ? relatedTv.consentStatus : 'non-inviato';
+                const statusInfo = realStatus === 'firmato'
+                    ? { icon: 'bi-patch-check-fill', cls: 'text-success', label: 'FIRMATO E APPROVATO', cert: `AUTH-OTP-OK (${d.at})` }
+                    : realStatus === 'inviato'
+                        ? { icon: 'bi-hourglass-split', cls: 'text-warning', label: 'IN ATTESA DI FIRMA DEL PAZIENTE', cert: '—' }
+                        : { icon: 'bi-x-circle-fill', cls: 'text-danger', label: 'NON ANCORA INVIATO AL PAZIENTE', cert: '—' };
                 bodyHtml = `
                 <div class="h-100 d-flex align-items-start justify-content-center p-4" style="overflow-y:auto; background:#0f172a;">
                     <div class="bg-white p-4 shadow-sm rounded border" style="font-family:'Times New Roman', serif; color:#1e293b; max-width:720px; width:100%; font-size:0.88rem;">
@@ -6432,11 +6445,11 @@
                         <div class="mt-3 p-3 rounded bg-light border">
                             <div class="d-flex align-items-center justify-content-between mb-1" style="font-size:0.75rem;">
                                 <span class="text-muted">Stato Sottoscrizione:</span>
-                                <span class="fw-bold text-success"><i class="bi bi-patch-check-fill me-1"></i>FIRMATO E APPROVATO</span>
+                                <span class="fw-bold ${statusInfo.cls}"><i class="bi ${statusInfo.icon} me-1"></i>${statusInfo.label}</span>
                             </div>
                             <div class="d-flex align-items-center justify-content-between" style="font-size:0.75rem;">
                                 <span class="text-muted">Certificato OTP / Marca Temporale:</span>
-                                <span class="font-monospace fw-bold text-secondary">AUTH-OTP-OK (${d.at})</span>
+                                <span class="font-monospace fw-bold text-secondary">${statusInfo.cert}</span>
                             </div>
                         </div>
                     </div>
