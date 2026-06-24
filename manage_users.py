@@ -25,6 +25,27 @@ def extract_username(code_line):
     return m.group(1) if m else None
 
 
+def list_users(text):
+    """Restituisce una lista di (facility, username, name) per tutti gli utenti già presenti
+    in FACILITIES, leggendo direttamente il sorgente (non serve eseguire il JS)."""
+    results = []
+    for facility in ("struttura1", "struttura2"):
+        pattern = re.compile(
+            r"(" + re.escape(facility) + r":\s*\{.*?users:\s*\[)(.*?)(\n(\s*)\])",
+            re.S,
+        )
+        match = pattern.search(text)
+        if not match:
+            continue
+        for obj_match in re.finditer(r"\{[^\n]*\}", match.group(2)):
+            obj_text = obj_match.group(0)
+            u = re.search(r"username:\s*'([^']*)'", obj_text)
+            n = re.search(r"\bname:\s*'([^']*)'", obj_text)
+            if u and n:
+                results.append((facility, u.group(1), n.group(1)))
+    return results
+
+
 def add_new_user(text, facility, code_line):
     """Aggiunge code_line in coda a FACILITIES[facility].users. Restituisce il nuovo testo."""
     username = extract_username(code_line)
@@ -119,11 +140,18 @@ def main():
     print("1) Aggiungi un nuovo utente")
     print("2) Resetta la password di un utente esistente")
     print("3) Elimina un utente esistente")
-    choice = input("Scegli (1/2/3): ").strip()
-    if choice not in ("1", "2", "3"):
+    print("4) Elenco utenti esistenti")
+    choice = input("Scegli (1/2/3/4): ").strip()
+    if choice not in ("1", "2", "3", "4"):
         sys.exit("Scelta non valida.")
 
     text = SRC.read_text(encoding="utf-8")
+
+    if choice == "4":
+        print()
+        for facility, username, name in list_users(text):
+            print(f"  [{FACILITY_LABELS[facility]}] {name} — username: {username}")
+        return
 
     if choice in ("1", "2"):
         print("\nIncolla qui sotto la riga di codice generata dal pannello admin (quella che inizia")
@@ -166,6 +194,12 @@ def main():
     confirm = input("Confermi e applico la modifica al sorgente? (s/n): ").strip().lower()
     if confirm != "s":
         sys.exit("Operazione annullata, nessuna modifica fatta.")
+
+    # Copia di sicurezza del sorgente PRIMA di sovrascriverlo: se qualcosa va storto (o ci si
+    # pente subito dopo aver confermato), si può tornare indietro senza dover usare git.
+    backup_path = SRC.with_suffix(SRC.suffix + ".bak")
+    backup_path.write_text(text, encoding="utf-8")
+    print(f"Copia di sicurezza salvata in {backup_path.name} (versione precedente alla modifica).")
 
     SRC.write_text(new_text, encoding="utf-8")
     print(f"Modifica applicata a {SRC.name}.")

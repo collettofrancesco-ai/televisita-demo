@@ -8,3 +8,4 @@ manuale/
 Backup Televisita/
 backup_televisita_*.json
 __pycache__/
+*.bak
