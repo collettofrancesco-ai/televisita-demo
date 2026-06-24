@@ -6281,6 +6281,30 @@
  
             container.innerHTML = bodyHtml;
 
+            // Il modale va mostrato QUI, prima di avviare il rendering del PDF, non dopo (come
+            // accadeva prima di questa correzione): finché il modale è ancora display:none, il
+            // contenitore delle pagine ha larghezza/altezza pari a zero, quindi la misura reale
+            // del documento dentro renderPdfPreviewPages() (pagesContainer.scrollHeight) legge
+            // sempre 0. Il risultato era una lavagna ancorata al solo "min-height" di riserva
+            // (600px) invece dell'altezza vera del documento: un'annotazione disegnata vicino
+            // all'inizio del documento finiva visivamente fuori posto, e siccome ogni dispositivo
+            // ha una larghezza diversa (quindi un'altezza "vera" diversa per lo stesso PDF), il
+            // disallineamento risultava diverso — e quindi diverso — su ciascun PC collegato.
+            //
+            // Spostare semplicemente modal.show() più in alto NON basta: l'animazione di apertura
+            // di Bootstrap aspetta che lo sfondo scuro (backdrop) abbia finito la propria
+            // transizione prima di impostare display:block sul modale stesso (un ritardo di
+            // svariati millisecondi, non un singolo frame). Per questo qui si forza subito
+            // style.display='block' a mano, prima della show() ufficiale: il contenuto diventa
+            // misurabile all'istante, senza alterare la normale animazione di apertura (che
+            // resta gestita da Bootstrap esattamente come prima).
+            const modalEl = document.getElementById('docPreviewModal');
+            if (modalEl && !modalEl.classList.contains('show')) {
+                modalEl.style.display = 'block';
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.show();
+            }
+
             // Se la collaborazione era già attiva con uno zoom diverso da quello di base, va
             // riapplicato PRIMA di renderizzare il PDF: altrimenti, chiudendo e riaprendo
             // l'anteprima, questo lato tornerebbe alla larghezza di base mentre l'altro medico
@@ -6316,12 +6340,6 @@
                     }
                     initCollabCanvas(0, myGen);
                 });
-            }
-
-            const modalEl = document.getElementById('docPreviewModal');
-            if (modalEl && !modalEl.classList.contains('show')) {
-                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-                modal.show();
             }
         }
 
