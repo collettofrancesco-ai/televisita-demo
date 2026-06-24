@@ -1171,6 +1171,63 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="row g-4 mt-1">
+                    <div class="col-12">
+                        <div class="login-card" style="cursor:default; max-width:none;">
+                            <h6 class="fw-bold mb-1">
+                                <i class="bi bi-person-plus-fill me-1"></i>Crea Nuovo Utente Medico
+                            </h6>
+                            <p class="text-muted small mb-3">
+                                Non esiste un database vero: questo modulo genera solo il pezzo di
+                                codice da incollare in <code>FACILITIES</code> nel sorgente
+                                (<code>televisita_fix.html</code>). Compila i campi, copia il codice
+                                generato e invialo a chi gestisce il codice per aggiungerlo e
+                                ripubblicare l'app — il nuovo utente non sarà attivo finché questo
+                                passaggio non viene fatto.
+                            </p>
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-semibold text-muted">Struttura</label>
+                                    <select id="newuser-facility" class="form-select form-select-sm">
+                                        <option value="struttura1">Centro Tunisia</option>
+                                        <option value="struttura2">Ospedale Vincenzo Cervello</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-semibold text-muted">Nome e Cognome</label>
+                                    <input type="text" id="newuser-name" class="form-control form-control-sm" placeholder="Dr. Mario Rossi">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small fw-semibold text-muted">Specializzazione</label>
+                                    <input type="text" id="newuser-spec" class="form-control form-control-sm" placeholder="Cardiologia">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small fw-semibold text-muted">Username</label>
+                                    <input type="text" id="newuser-username" class="form-control form-control-sm" placeholder="mario.rossi">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small fw-semibold text-muted">Password</label>
+                                    <input type="text" id="newuser-password" class="form-control form-control-sm" placeholder="Password temporanea">
+                                </div>
+                            </div>
+                            <div id="newuser-error" class="text-danger small mt-2" style="min-height:1.2em;"></div>
+                            <button class="btn btn-primary btn-sm mt-2" onclick="generateNewUserCode()">
+                                <i class="bi bi-code-slash me-1"></i>Genera Codice
+                            </button>
+                            <div id="newuser-result" class="mt-3" style="display:none;">
+                                <label class="form-label small fw-semibold text-muted">
+                                    Codice da incollare in FACILITIES.<span id="newuser-result-facility"></span>.users
+                                </label>
+                                <textarea id="newuser-code" class="form-control font-monospace" rows="3" readonly style="font-size:0.78rem;"></textarea>
+                                <button class="btn btn-outline-secondary btn-sm mt-2" onclick="copyNewUserCode()">
+                                    <i class="bi bi-clipboard me-1"></i>Copia
+                                </button>
+                                <span id="newuser-copied" class="text-success small ms-2" style="display:none;">Copiato!</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -3565,6 +3622,62 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        // Genera solo il frammento di codice JS da incollare a mano in FACILITIES[...].users nel
+        // sorgente: non esiste un vero database, quindi un nuovo utente non esiste davvero finché
+        // qualcuno non incolla questa riga nel codice e ripubblica l'app (vedi build_minified.py).
+        // Questo pannello serve solo a evitare di scrivere a mano l'hash della password e il
+        // formato esatto dell'oggetto, non a creare utenti realmente attivi.
+        async function generateNewUserCode() {
+            const errEl = document.getElementById('newuser-error');
+            errEl.textContent = '';
+
+            const facility = document.getElementById('newuser-facility').value;
+            const name = document.getElementById('newuser-name').value.trim();
+            const spec = document.getElementById('newuser-spec').value.trim();
+            let username = document.getElementById('newuser-username').value.trim();
+            const password = document.getElementById('newuser-password').value;
+
+            if (!name || !spec || !username || !password) {
+                errEl.textContent = 'Compila tutti i campi prima di generare il codice.';
+                return;
+            }
+            // Lo username nel codice esistente è sempre minuscolo e senza spazi (es. "mario.rossi"):
+            // lo normalizziamo qui per non lasciare passare un formato diverso dagli altri.
+            username = username.toLowerCase().replace(/\s+/g, '.');
+
+            const existingUsernames = [
+                ...FACILITIES.struttura1.users.map(u => u.username.toLowerCase()),
+                ...FACILITIES.struttura2.users.map(u => u.username.toLowerCase())
+            ];
+            if (existingUsernames.includes(username)) {
+                errEl.textContent = `Lo username "${username}" esiste già: scegline un altro.`;
+                return;
+            }
+
+            // Iniziali per l'avatar, ignorando i titoli (Dr., Dr.ssa, Prof., ecc.)
+            const nameForInitials = name.replace(/^(dr|prof)\.?(ssa)?\.?\s+/i, '');
+            const initials = nameForInitials.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '??';
+
+            const passwordHash = await sha256Hex(password);
+            const fac = FACILITIES[facility];
+
+            const code = `{ username: '${username}', name: '${name.replace(/'/g, "\\'")}', spec: '${spec.replace(/'/g, "\\'")}', avatar: '${initials}', color: '${fac.color}', bg: '${fac.bg}', passwordHash: '${passwordHash}' },`;
+
+            document.getElementById('newuser-result-facility').textContent = facility;
+            document.getElementById('newuser-code').value = code;
+            document.getElementById('newuser-result').style.display = 'block';
+            document.getElementById('newuser-copied').style.display = 'none';
+        }
+
+        function copyNewUserCode() {
+            const codeEl = document.getElementById('newuser-code');
+            navigator.clipboard.writeText(codeEl.value).then(() => {
+                const copiedEl = document.getElementById('newuser-copied');
+                copiedEl.style.display = 'inline';
+                setTimeout(() => { copiedEl.style.display = 'none'; }, 2000);
+            });
         }
 
         function initAdminView() {
