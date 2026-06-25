@@ -49,6 +49,74 @@
             --hover-visit: rgba(255, 255, 255, 0.05);
         }
 
+        /* ── Correzioni modalità scura ── */
+
+        [data-theme="dark"] .app-header {
+            background: linear-gradient(135deg, #071535 0%, #0a1f3d 60%, #0d2648 100%);
+        }
+        [data-theme="dark"] #hdr-avatar {
+            background: rgba(255, 255, 255, .18) !important;
+            color: #fff !important;
+        }
+        [data-theme="dark"] .login-card .fw-bold {
+            color: var(--text) !important;
+        }
+        [data-theme="dark"] .login-card .text-muted {
+            color: var(--muted) !important;
+        }
+        [data-theme="dark"] #notif-panel {
+            background: var(--card) !important;
+        }
+        [data-theme="dark"] #notif-panel > div:first-child {
+            background: var(--card-header) !important;
+        }
+        [data-theme="dark"] .doc-notif {
+            background: rgba(46, 125, 50, .12);
+            border-color: rgba(165, 214, 167, .2);
+        }
+        [data-theme="dark"] .doc-notif.incoming {
+            background: rgba(230, 81, 0, .12);
+            border-color: rgba(255, 204, 128, .2);
+        }
+        [data-theme="dark"] .form-control,
+        [data-theme="dark"] .form-select {
+            background-color: var(--card-header);
+            color: var(--text);
+            border-color: var(--border);
+        }
+        [data-theme="dark"] .form-control:focus,
+        [data-theme="dark"] .form-select:focus {
+            background-color: var(--card);
+            border-color: var(--s1);
+            color: var(--text);
+            box-shadow: 0 0 0 .2rem rgba(21, 101, 192, .15);
+        }
+        [data-theme="dark"] .form-control::placeholder {
+            color: var(--muted);
+        }
+        [data-theme="dark"] .role-pill {
+            background: var(--card-header);
+            color: var(--muted);
+        }
+        [data-theme="dark"] .doc-item {
+            background: var(--card-header);
+        }
+        [data-theme="dark"] .doc-item.doc-private {
+            background: var(--card);
+            border-color: rgba(255, 224, 178, .25);
+        }
+        [data-theme="dark"] .upload-zone {
+            background: var(--card-header);
+        }
+        [data-theme="dark"] .active-room-card {
+            background: rgba(76, 175, 80, .12) !important;
+            border-color: rgba(76, 175, 80, .25) !important;
+        }
+        [data-theme="dark"] .modal-header[style*="background:#f8faff"],
+        [data-theme="dark"] .modal-header[style*="background: #f8faff"] {
+            background: var(--card-header) !important;
+        }
+
         * {
             box-sizing: border-box;
         }
@@ -1083,7 +1151,7 @@
                     <div class="text-start mb-3">
                         <label for="user-select" class="form-label small fw-semibold text-muted"
                             data-i18n="login_label_user">Profilo Utente</label>
-                        <select id="user-select" class="form-select text-dark" onchange="onUserSelectChange()"></select>
+                        <select id="user-select" class="form-select" onchange="onUserSelectChange()"></select>
                     </div>
 
                     <div class="text-start mb-3">
@@ -1369,9 +1437,9 @@
     </header>
 
     <div id="notif-panel"
-        style="display:none;position:fixed;top:64px;right:1rem;z-index:1500;width:320px;background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.15);overflow:hidden;">
+        style="display:none;position:fixed;top:64px;right:1rem;z-index:1500;width:320px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.15);overflow:hidden;">
         <div class="d-flex align-items-center justify-content-between px-3 py-2"
-            style="border-bottom:1px solid var(--border);background:#f8faff;">
+            style="border-bottom:1px solid var(--border);background:var(--card-header);">
             <span class="fw-bold small"><i class="bi bi-bell-fill me-2 text-primary"></i><span
                     data-i18n="notif_title">Notifiche</span></span>
             <div class="d-flex gap-2 align-items-center">
@@ -8054,7 +8122,7 @@
             const acc = sessionVisits.filter(tv => tv.status === 'accettata').length;
 
             document.getElementById('session-info').innerHTML = `
-        <div class="d-flex align-items-center gap-3 p-3 mb-3 rounded-3" style="background:${d.bg};">
+        <div class="d-flex align-items-center gap-3 p-3 mb-3 rounded-3" style="background:var(--${S.role === 'struttura1' ? 's1' : 's2'}-light);">
             <div class="d-avatar" style="background:${d.color};color:#fff;width:46px;height:46px;font-size:.9rem;">${d.avatar}</div>
             <div>
                 <div class="fw-bold small">${d.name}</div>
@@ -8069,7 +8137,7 @@
             <div class="stat-row" onclick="showStatsDetail('docs')"><span class="text-muted">${t('stats_docs')}</span><strong>${S.docs.length}</strong></div>
         </div>
         ${S.activeRoom ? `
-        <div class="mt-2 p-2 rounded-3" style="background:#e8f5e9;border:1px solid #c8e6c9;">
+        <div class="active-room-card mt-2 p-2 rounded-3" style="background:#e8f5e9;border:1px solid #c8e6c9;">
             <div class="d-flex align-items-center gap-2">
                 <div style="width:8px;height:8px;border-radius:50%;background:#4caf50;flex-shrink:0;"></div>
                 <span class="text-success fw-bold small">${t('session_active')}</span>
