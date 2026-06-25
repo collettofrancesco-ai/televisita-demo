@@ -4406,7 +4406,9 @@
                 showToast(t('toast_imm_rejected', { name: other.name }), 'danger');
             }
 
-            if (ev === 'visit_scheduled' && event.fromRole !== S.role) {
+            // Una televisita "Centro" arriva qui senza event.patient (vedi scheduleVisit): niente da
+            // notificare, perché quella visita non deve mai farsi notare dall'altra struttura.
+            if (ev === 'visit_scheduled' && event.fromRole !== S.role && event.patient) {
                 showToast(t('toast_sched_created', { patient: event.patient, date: event.date, time: event.time }), 'info');
                 addNotif('bi-calendar-plus-fill', t('notif_sched_created_title'), t('notif_sched_created_body', { patient: event.patient, date: event.date, time: event.time }), 'incoming');
                 flashBell();
@@ -8010,7 +8012,14 @@
             dateEl.min = todayStr();
             renderAll();
             showToast(t('toast_sched_created', { patient: tv.patient, date: fmtDate(tv.date), time: tv.time }), 'success');
-            syncState({ kind: 'visit_scheduled', patient: tv.patient, date: fmtDate(tv.date), time: tv.time, fromRole: S.role });
+            // Una televisita "Centro" non deve mai far arrivare il nome del paziente all'altra
+            // struttura: getShared() la esclude già dai dati condivisi, ma questo evento (usato solo
+            // per il toast/la notifica "nuova televisita prenotata") viaggiava comunque per intero su
+            // MQTT e sul BroadcastChannel locale, bypassando quel filtro e facendo leggere il nome
+            // del paziente anche a chi non dovrebbe mai vederlo.
+            syncState(isCentro
+                ? { kind: 'visit_scheduled', fromRole: S.role }
+                : { kind: 'visit_scheduled', patient: tv.patient, date: fmtDate(tv.date), time: tv.time, fromRole: S.role });
         }
 
         function acceptSched(id) {
