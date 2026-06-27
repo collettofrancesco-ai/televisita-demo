@@ -1413,9 +1413,9 @@
                     <i class="bi bi-moon-stars-fill fs-5"></i>
                 </button>
 
-                <button class="btn btn-link text-white p-1 me-2" onclick="openEmailSettingsModal()"
-                    id="email-settings-btn" title="Impostazioni E-mail Reali">
-                    <i class="bi bi-gear-fill fs-5"></i>
+                <button class="btn btn-link text-white p-1 me-2" onclick="openBackupModal()"
+                    id="backup-modal-btn" style="display:none;" title="Backup & Ripristino dati">
+                    <i class="bi bi-cloud-arrow-down-fill fs-5"></i>
                 </button>
 
                 <button class="btn btn-link text-white p-1 position-relative me-2"
@@ -2180,103 +2180,53 @@
         </div>
     </div>
 
-    <!-- Modal Impostazioni EmailJS -->
-    <div class="modal fade" id="emailSettingsModal" tabindex="-1" aria-hidden="true">
+    <!-- Modal Backup & Ripristino Dati -->
+    <div class="modal fade" id="backupModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content" style="border-radius:16px;overflow:hidden;">
                 <div class="modal-header border-0 pb-0" style="background:#f8faff;">
-                    <h5 class="modal-title fw-bold"><i
-                            class="bi bi-gear-fill me-2 text-primary"></i><span>Configurazione E-mail Reali
-                            (EmailJS)</span></h5>
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-cloud-arrow-down-fill me-2 text-primary"></i>Backup & Ripristino Dati
+                    </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body py-3">
-                    <p class="text-muted small mb-3">
-                        Configura un account gratuito su <a href="https://www.emailjs.com/" target="_blank"
-                            class="text-primary fw-semibold">EmailJS</a> per permettere al sistema (100% serverless) di
-                        inviare e-mail reali direttamente alla casella del paziente.
+                    <p class="text-muted small mb-3 lh-sm">
+                        Esporta i dati locali (visite, documenti condivisi) in un file JSON per sicurezza,
+                        o importali se elimini la cache del browser.
                     </p>
-                    <div id="emailjs-config-source" class="small text-muted mb-3"></div>
-                    <div class="mb-3">
-                        <label for="emailjs-public-key" class="form-label small fw-semibold text-muted">Public Key (User
-                            ID)</label>
-                        <input type="text" id="emailjs-public-key" class="form-control"
-                            placeholder="es. user_xxxxxxxxxxxxxx">
-                    </div>
-                    <div class="mb-3">
-                        <label for="emailjs-service-id" class="form-label small fw-semibold text-muted">Service
-                            ID</label>
-                        <input type="text" id="emailjs-service-id" class="form-control"
-                            placeholder="es. service_xxxxxxx">
-                    </div>
-                    <div class="mb-3">
-                        <label for="emailjs-template-id" class="form-label small fw-semibold text-muted">Template
-                            ID</label>
-                        <input type="text" id="emailjs-template-id" class="form-control"
-                            placeholder="es. template_xxxxxxx">
-                    </div>
-                    <div class="p-2 bg-light rounded text-muted small border mb-3">
-                        <div class="fw-bold mb-1"><i class="bi bi-info-circle me-1"></i>Parametri del Template EmailJS:
-                        </div>
-                        Crea un template su EmailJS usando questi placeholders:
-                        <ul class="mb-0 ps-3 mt-1" style="font-size: 0.68rem;">
-                            <li><code>{{subject}}</code>: Oggetto dell'email</li>
-                            <li><code>{{message}}</code>: Corpo testuale del messaggio</li>
-                            <li><code>{{to_email}}</code>: Email del paziente destinatario</li>
-                            <li><code>{{to_name}}</code>: Nome del paziente</li>
-                            <li><code>{{invite_url}}</code>: Link cliccabile (videochiamata, oppure pagina di accettazione consenso) se presente</li>
-                            <li><code>{{action_label}}</code>: Testo del bottone per {{invite_url}} (cambia in base al tipo di email: es. "Visualizza e firma consenso" o "Entra in Videochiamata") — usalo come testo del link invece di scriverlo fisso nel template</li>
-                            <li><code>{{otp_code}}</code>: Codice OTP di firma (se presente)</li>
-                        </ul>
-                    </div>
-
-                    <hr class="my-3">
-                    <h6 class="fw-bold mb-2 text-dark d-flex align-items-center gap-2">
-                        <i class="bi bi-shield-lock-fill text-warning"></i>
-                        <span>Backup & Ripristino Dati</span>
-                    </h6>
-                    <p class="text-muted small mb-3 lh-sm" style="font-size:0.75rem;">
-                        Esporta i dati locali (visite, documenti condivisi e impostazioni) in un file JSON per
-                        sicurezza, o importali se elimini la cache del browser.
-                    </p>
-                    <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-outline-primary btn-sm flex-grow-1 py-1.5 fw-semibold"
+                    <div class="d-flex gap-2 mb-3">
+                        <button type="button" class="btn btn-outline-primary btn-sm flex-grow-1 fw-semibold"
                             onclick="exportDataBackup()" style="font-size:0.75rem;">
                             <i class="bi bi-download me-1"></i> Esporta Backup
                         </button>
-                        <button type="button" class="btn btn-outline-warning btn-sm flex-grow-1 py-1.5 fw-semibold"
+                        <button type="button" class="btn btn-outline-warning btn-sm flex-grow-1 fw-semibold"
                             onclick="document.getElementById('import-file-input').click()" style="font-size:0.75rem;">
                             <i class="bi bi-upload me-1"></i> Importa Backup
                         </button>
                         <input type="file" id="import-file-input" style="display:none;" accept=".json"
                             onchange="importDataBackup(event)">
                     </div>
-
-                    <div class="mt-3 pt-3 border-top">
+                    <div class="border-top pt-3">
                         <div class="d-flex align-items-center justify-content-between mb-1">
-                            <span class="small fw-semibold text-dark"><i class="bi bi-arrow-repeat me-1"></i>Backup
-                                Automatico</span>
+                            <span class="small fw-semibold text-dark">
+                                <i class="bi bi-arrow-repeat me-1"></i>Backup Automatico
+                            </span>
                             <span id="auto-backup-status" class="small text-muted" style="font-size:0.7rem;"></span>
                         </div>
-                        <p class="text-muted small mb-2 lh-sm" style="font-size:0.7rem;">
-                            Scegli una volta una cartella: da quel momento questo PC vi salva una nuova copia ogni 10
-                            minuti con tutti i dati presenti qui (anche le televisite Centro, che non viaggiano
-                            altrove), mantenendo lo storico delle ultime copie invece di sovrascrivere un unico file.
+                        <p class="text-muted mb-2 lh-sm" style="font-size:0.7rem;">
+                            Scegli una cartella: ogni 10 minuti verrà salvata una copia automatica di tutti i dati.
                             Funziona solo su Chrome/Edge desktop.
                         </p>
-                        <div class="d-flex gap-2">
-                            <button type="button" id="btn-auto-backup-toggle" class="btn btn-outline-success btn-sm flex-grow-1 py-1.5 fw-semibold"
-                                onclick="toggleAutoBackup()" style="font-size:0.75rem;">
-                                <i class="bi bi-play-fill me-1"></i> Attiva Backup Automatico
-                            </button>
-                        </div>
+                        <button type="button" id="btn-auto-backup-toggle"
+                            class="btn btn-outline-success btn-sm w-100 fw-semibold"
+                            onclick="toggleAutoBackup()" style="font-size:0.75rem;">
+                            <i class="bi bi-play-fill me-1"></i> Attiva Backup Automatico
+                        </button>
                     </div>
                 </div>
                 <div class="modal-footer border-0 pt-0">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Chiudi</button>
-                    <button type="button" class="btn btn-primary fw-semibold" onclick="saveEmailSettings()">
-                        <i class="bi bi-save me-1"></i> Salva Impostazioni
-                    </button>
                 </div>
             </div>
         </div>
@@ -5040,6 +4990,7 @@
 
             pwdEl.value = '';
             document.getElementById('login-overlay').style.display = 'none';
+            show('backup-modal-btn', true);
             switchRole(activeFacilityId);
 
             initMQTT(atob('T2xvdmlzaXRhX3BhbGVybW9fdHVuaXNpYQ=='));
@@ -5122,6 +5073,7 @@
             }
             S.immReq = null; S.immRoom = null; S.activeRoom = null; S.immReqSender = null;
             toggleNotifPanel(false);
+            show('backup-modal-btn', false);
             showFacilitySelection();
             document.getElementById('login-overlay').style.display = 'flex';
         }
@@ -5473,54 +5425,8 @@
             showToast(msgHtml, 'info', 10000);
         }
 
-        function openEmailSettingsModal() {
-            const role = S.role || 'struttura1';
-            let override = null;
-            try {
-                const raw = localStorage.getItem('tv_emailjs_config_' + role);
-                if (raw) override = JSON.parse(raw);
-            } catch (_) { }
-
-            const defaultChain = DEFAULT_EMAILJS_CONFIGS[role] || DEFAULT_EMAILJS_CONFIGS.struttura1;
-            const config = override || defaultChain[0];
-            document.getElementById('emailjs-public-key').value = config.publicKey || '';
-            document.getElementById('emailjs-service-id').value = config.serviceId || '';
-            document.getElementById('emailjs-template-id').value = config.templateId || '';
-
-            const sourceEl = document.getElementById('emailjs-config-source');
-            if (sourceEl) {
-                if (override) {
-                    sourceEl.textContent = '🔧 Configurazione personalizzata, salvata su questo browser.';
-                } else if (defaultChain.length > 1) {
-                    sourceEl.textContent = `✓ Configurazione predefinita di fabbrica (account 1 di ${defaultChain.length} nella catena di riserva): già attiva, valida su qualunque dispositivo o dominio senza bisogno di impostarla.`;
-                } else {
-                    sourceEl.textContent = '✓ Configurazione predefinita di fabbrica: già attiva, valida su qualunque dispositivo o dominio senza bisogno di impostarla.';
-                }
-            }
-
-            const modal = new bootstrap.Modal(document.getElementById('emailSettingsModal'));
-            modal.show();
-        }
-
-        function saveEmailSettings() {
-            const role = S.role || 'struttura1';
-            const lsKey = 'tv_emailjs_config_' + role;
-            const publicKey = document.getElementById('emailjs-public-key').value.trim();
-            const serviceId = document.getElementById('emailjs-service-id').value.trim();
-            const templateId = document.getElementById('emailjs-template-id').value.trim();
-
-            if (!publicKey && !serviceId && !templateId) {
-                // Campi vuoti: si rimuove la personalizzazione e si torna al default di fabbrica,
-                // invece di salvare una configurazione vuota che bloccherebbe l'invio.
-                localStorage.removeItem(lsKey);
-                showToast('Configurazione personalizzata rimossa: si torna al default di fabbrica.', 'success');
-            } else {
-                const config = { publicKey, serviceId, templateId };
-                localStorage.setItem(lsKey, JSON.stringify(config));
-                showToast('Configurazione e-mail salvata correttamente.', 'success');
-            }
-
-            bootstrap.Modal.getInstance(document.getElementById('emailSettingsModal')).hide();
+        function openBackupModal() {
+            new bootstrap.Modal(document.getElementById('backupModal')).show();
         }
 
         // Dati completi del backup: usa getSharedStateForStorage() (lo stato locale per intero),
@@ -5598,13 +5504,10 @@
                     S.emails = s.emails || [];
                     S.immReqSender = s.immReqSender ?? null;
 
-                    // Ripristina configurazione EmailJS se presente
+                    // Ripristina configurazione EmailJS se presente nel backup (campo legacy)
                     if (data.emailjs) {
                         const restoreRole = data.role || S.role || 'struttura1';
                         localStorage.setItem('tv_emailjs_config_' + restoreRole, JSON.stringify(data.emailjs));
-                        document.getElementById('emailjs-public-key').value = data.emailjs.publicKey || '';
-                        document.getElementById('emailjs-service-id').value = data.emailjs.serviceId || '';
-                        document.getElementById('emailjs-template-id').value = data.emailjs.templateId || '';
                     }
 
                     // Salva e sincronizza su BroadcastChannel e MQTT. Deve usare
@@ -5621,7 +5524,7 @@
 
                     showToast('🟢 Backup ripristinato con successo!', 'success');
 
-                    const modalEl = document.getElementById('emailSettingsModal');
+                    const modalEl = document.getElementById('backupModal');
                     const modalInstance = bootstrap.Modal.getInstance(modalEl);
                     if (modalInstance) modalInstance.hide();
                 } catch (err) {
