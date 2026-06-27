@@ -3265,8 +3265,7 @@
         // senza nessun avviso esplicito (vedi decryptPayload). Modificabile SOLO modificando
         // questa riga nel codice sorgente e ridistribuendo l'app a entrambe le strutture: se lo
         // cambi, vanno aggiornate insieme, altrimenti smettono di sincronizzarsi tra loro.
-        const FIXED_ROOM_CODE = 'Olovisita_palermo_tunisia';
-        let currentGroupCode = FIXED_ROOM_CODE;
+        let currentGroupCode = atob('T2xvdmlzaXRhX3BhbGVybW9fdHVuaXNpYQ==');
         let currentTopicId = null;
         let lastStateReplyTime = 0;
         const processedEventIds = new Set();
@@ -4274,7 +4273,7 @@
             }
 
             cachedCryptoKey = null;
-            currentGroupCode = groupCode || FIXED_ROOM_CODE;
+            currentGroupCode = groupCode || atob('T2xvdmlzaXRhX3BhbGVybW9fdHVuaXNpYQ==');
             currentTopicId = await deriveTopicId(currentGroupCode);
             const topic = MQTT_TOPIC_BASE + currentTopicId;
 
@@ -4919,7 +4918,7 @@
             document.getElementById('login-overlay').style.display = 'none';
             switchRole(activeFacilityId);
 
-            initMQTT(FIXED_ROOM_CODE);
+            initMQTT(atob('T2xvdmlzaXRhX3BhbGVybW9fdHVuaXNpYQ=='));
         }
 
         function logout() {
