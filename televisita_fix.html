@@ -5079,42 +5079,35 @@
             const newHash = await sha256Hex(newPw);
             const code = `{ username: '${user.username}', name: '${user.name.replace(/'/g,"\\'")}', spec: '${user.spec.replace(/'/g,"\\'")}', avatar: '${user.avatar}', color: '${user.color}', bg: '${user.bg}', passwordHash: '${newHash}' },`;
 
-            // Email all'amministratore
             const facility = DOCTORS[S.role].facility;
-            const subject  = `[Olovisita] Cambio password — ${user.name} (${facility})`;
-            const message  = `Richiesta cambio password da ${user.name} (${user.username}) — ${facility}.\n\nCodice da usare con manage_users.py (opzione 2 — Resetta password):\n\n${code}`;
-
-            const emailJsConfigs = getEmailJsConfigs();
-            const templateParams = {
-                to_email:     'colletto.francesco@gmail.com',
-                to_name:      'Francesco',
-                subject:      subject,
-                message:      message,
-                invite_url:   '',
-                action_label: '',
-                otp_code:     ''
-            };
-
             document.getElementById('cpw-submit-btn').disabled = true;
-            sendAcrossEmailJsAccounts(emailJsConfigs, templateParams)
-                .then(() => { show('cpw-sent', true); })
-                .catch(() => {
-                    // Fallback silenzioso: invia al pannello admin via MQTT cifrato (ECIES)
-                    encryptForAdmin({ username: user.username, name: user.name, facility, code })
-                        .then(encrypted => {
-                            if (encrypted && mqttClient && mqttClient.connected) {
-                                mqttClient.publish(ADMIN_PW_REQUEST_TOPIC, JSON.stringify(encrypted), { qos: 1 });
-                                show('cpw-sent', true);
-                            } else {
-                                showErr(t('changepw_err_retry'));
-                                document.getElementById('cpw-submit-btn').disabled = false;
-                            }
-                        })
-                        .catch(() => {
-                            showErr(t('changepw_err_retry'));
-                            document.getElementById('cpw-submit-btn').disabled = false;
-                        });
-                });
+
+            // Canale primario: MQTT cifrato ECIES → pannello admin
+            const mqttOk = await encryptForAdmin({ username: user.username, name: user.name, facility, code })
+                .then(encrypted => {
+                    if (encrypted && mqttClient && mqttClient.connected) {
+                        mqttClient.publish(ADMIN_PW_REQUEST_TOPIC, JSON.stringify(encrypted), { qos: 1 });
+                        return true;
+                    }
+                    return false;
+                })
+                .catch(() => false);
+
+            if (!mqttOk) {
+                showErr(t('changepw_err_retry'));
+                document.getElementById('cpw-submit-btn').disabled = false;
+                return;
+            }
+
+            show('cpw-sent', true);
+
+            // Canale secondario: email di notifica (fire-and-forget, non blocca il flusso)
+            const subject = `[Olovisita] Cambio password — ${user.name} (${facility})`;
+            const message = `Richiesta cambio password da ${user.name} (${user.username}) — ${facility}.\n\nCodice da usare con manage_users.py (opzione 2 — Resetta password):\n\n${code}`;
+            sendAcrossEmailJsAccounts(getEmailJsConfigs(), {
+                to_email: 'colletto.francesco@gmail.com', to_name: 'Francesco',
+                subject, message, invite_url: '', action_label: '', otp_code: ''
+            }).catch(() => {});
         }
 
         function logout() {
