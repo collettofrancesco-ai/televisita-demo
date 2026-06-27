@@ -5052,14 +5052,6 @@
             }
 
             show('cpw-sent', true);
-
-            // Canale secondario: email di notifica (fire-and-forget, non blocca il flusso)
-            const subject = `[Olovisita] Cambio password — ${user.name} (${facility})`;
-            const message = `Richiesta cambio password da ${user.name} (${user.username}) — ${facility}.\n\nCodice da usare con manage_users.py (opzione 2 — Resetta password):\n\n${code}`;
-            sendAcrossEmailJsAccounts(getEmailJsConfigs(), {
-                to_email: 'colletto.francesco@gmail.com', to_name: 'Francesco',
-                subject, message, invite_url: '', action_label: '', otp_code: ''
-            }).catch(() => {});
         }
 
         function logout() {
