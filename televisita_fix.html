@@ -5182,7 +5182,7 @@
             // Una televisita "Centro" arriva qui senza event.patient (vedi scheduleVisit): niente da
             // notificare, perché quella visita non deve mai farsi notare dall'altra struttura.
             if (ev === 'visit_scheduled' && event.fromRole !== S.role && event.patient) {
-                showVisitBookedPopup(event.patient, event.date, event.time, event.fromRole);
+                showVisitBookedPopup(event.patient, event.date, event.time, event.fromRole, event.doctorName);
                 addNotif('bi-calendar-plus-fill', t('notif_sched_created_title'), t('notif_sched_created_body', { patient: event.patient, date: event.date, time: event.time }), 'incoming');
                 flashBell();
             }
@@ -9026,7 +9026,7 @@
             // del paziente anche a chi non dovrebbe mai vederlo.
             syncState(isCentro
                 ? { kind: 'visit_scheduled', fromRole: S.role }
-                : { kind: 'visit_scheduled', patient: tv.patient, date: fmtDate(tv.date), time: tv.time, fromRole: S.role });
+                : { kind: 'visit_scheduled', patient: tv.patient, date: fmtDate(tv.date), time: tv.time, fromRole: S.role, doctorName: tv.createdByName || DOCTORS[S.role].name });
         }
 
         function acceptSched(id) {
@@ -11240,7 +11240,7 @@
             document.getElementById('video-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
-        function showVisitBookedPopup(patient, date, time, fromRole) {
+        function showVisitBookedPopup(patient, date, time, fromRole, doctorName) {
             const existing = document.getElementById('visit-booked-popup');
             if (existing) existing.remove();
 
@@ -11253,6 +11253,10 @@
             const goLabel  = isIT ? 'Vai alla visita'                     : 'Voir la visite';
             const closeLabel = isIT ? 'Chiudi'                            : 'Fermer';
 
+            const doctorLine = doctorName
+                ? `<p style="margin:0 0 2px;font-size:0.82rem;color:#546e7a;"><i class="bi bi-person-fill me-1"></i>${escapeHtml(doctorName)}</p>`
+                : '';
+
             const overlay = document.createElement('div');
             overlay.id = 'visit-booked-popup';
             overlay.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(15,23,42,0.45);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;';
@@ -11263,8 +11267,9 @@
                         <span style="font-size:0.95rem;font-weight:700;color:#0d47a1;">${title}</span>
                     </div>
                     <div style="padding:18px 20px 14px;">
-                        <p style="margin:0 0 6px;font-size:0.78rem;color:#78909c;">${byLabel} <strong>${escapeHtml(facilityName)}</strong></p>
-                        <p style="margin:0 0 8px;font-size:1.05rem;font-weight:700;color:#1a237e;">${escapeHtml(patient)}</p>
+                        <p style="margin:0 0 4px;font-size:0.78rem;color:#78909c;">${byLabel} <strong>${escapeHtml(facilityName)}</strong></p>
+                        ${doctorLine}
+                        <p style="margin:6px 0 8px;font-size:1.05rem;font-weight:700;color:#1a237e;">${escapeHtml(patient)}</p>
                         <p style="margin:0;font-size:0.88rem;color:#37474f;">
                             <i class="bi bi-calendar2 me-1" style="color:#1565c0;"></i>${date}
                             <i class="bi bi-clock ms-3 me-1" style="color:#1565c0;"></i>${time}
