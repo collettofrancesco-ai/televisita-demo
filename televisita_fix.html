@@ -1328,6 +1328,9 @@
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
                     <div class="d-flex align-items-center">
                         <span id="admin-mqtt-status" class="badge bg-secondary me-2">MQTT: in connessione...</span>
+                        <span id="admin-wakelock-badge" class="badge bg-success me-2" style="display:none;" title="Wake Lock attivo: il tab non andrà in sleep">
+                            <i class="bi bi-shield-check me-1"></i>Server 24/7
+                        </span>
                         <button id="admin-request-backup-btn" class="btn btn-outline-light btn-sm" onclick="requestImmediateBackup()">
                             <i class="bi bi-arrow-repeat me-1"></i>Forza backup immediato
                         </button>
@@ -3871,10 +3874,26 @@
             document.getElementById('admin-key-section').style.display = 'none';
             document.getElementById('admin-dashboard-section').style.display = 'block';
             connectAdminMqtt(0);
-            // Ricontrolla l'eventuale dato "vecchio" ogni minuto, non solo quando arriva un nuovo
-            // backup: è proprio l'assenza di nuovi backup che questo avviso deve far notare.
-            setInterval(refreshAllAdminStaleness, 60 * 1000);
+            // Aggiorna indicatori ogni 30s (mostra "N min fa" sempre aggiornato)
+            // e lancia auto-richiesta se i dati sono stale.
+            setInterval(refreshAllAdminStaleness, 30 * 1000);
             tryResumeAdminAutoBackup();
+            // Wake Lock: impedisce al browser/OS di sospendere il tab quando il PC
+            // è usato come server 24/7. Richiesto ogni volta che il lock decade (es.
+            // cambio schermata), tramite l'evento visibilitychange.
+            async function acquireWakeLock() {
+                if (!('wakeLock' in navigator)) return;
+                try {
+                    await navigator.wakeLock.request('screen');
+                    console.log('Admin: Wake Lock attivo');
+                    const badge = document.getElementById('admin-wakelock-badge');
+                    if (badge) badge.style.display = '';
+                } catch (e) { console.warn('Admin: Wake Lock non ottenuto:', e); }
+            }
+            acquireWakeLock();
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') acquireWakeLock();
+            });
         }
 
         function updateAdminMqttStatus(text, type) {
@@ -4268,29 +4287,61 @@
         // proprio nel momento in cui il canale di continuità operativa servirebbe di più. La soglia
         // è abbondante (2-3 cicli mancati) per non far scattare falsi allarmi su un singolo ritardo
         // occasionale del broker pubblico.
-        const ADMIN_STALE_THRESHOLD_MS = 25 * 60 * 1000;
+        const ADMIN_STALE_THRESHOLD_MS  = 25 * 60 * 1000; // giallo dopo 25 min
+        const ADMIN_DANGER_THRESHOLD_MS  = 60 * 60 * 1000; // rosso dopo 1 ora
+        const ADMIN_AUTOREQ_INTERVAL_MS  = 30 * 60 * 1000; // auto-richiesta ogni 30 min se stale
+        let   adminLastAutoRequest = 0;
 
         // Aggiorna solo la riga di stato (testo + colore) in base a quanto è vecchio l'ultimo
         // backup ricevuto, senza toccare il resto del pannello: richiamata sia subito dopo aver
         // ricevuto un nuovo backup, sia periodicamente da un timer, per far scattare l'avviso anche
         // se da una struttura non arriva più nulla (renderAdminDashboard, altrimenti, verrebbe
         // richiamata solo all'arrivo di un backup nuovo - cioè mai, nel caso che vogliamo segnalare).
+        function fmtAgo(ms) {
+            const m = Math.floor(ms / 60000);
+            if (m < 1)  return 'pochi secondi fa';
+            if (m < 60) return m + ' min fa';
+            const h = Math.floor(m / 60), rm = m % 60;
+            return h + 'h ' + (rm > 0 ? rm + 'min ' : '') + 'fa';
+        }
+
         function updateAdminStaleness(role) {
             const entry = adminReceivedBackups[role];
             const statusEl = document.getElementById('admin-status-' + role);
-            if (!entry || !statusEl) return;
-            const ageMs = Date.now() - entry.ts;
-            const isStale = ageMs > ADMIN_STALE_THRESHOLD_MS;
-            const ageMinutes = Math.round(ageMs / 60000);
-            statusEl.textContent = (isStale ? '⚠️ ' : '') + entry.facility + ' — ultimo aggiornamento: '
-                + new Date(entry.ts).toLocaleString('it-IT')
-                + (isStale ? ` (nessun dato da ${ageMinutes} minuti, verifica la connessione)` : '');
-            statusEl.className = 'small mb-3 ' + (isStale ? 'text-warning fw-semibold' : 'text-muted');
+            if (!statusEl) return;
+            if (!entry) {
+                statusEl.innerHTML = '<span class="badge" style="background:#90a4ae;">⏳ In attesa di dati...</span>';
+                return;
+            }
+            const ageMs  = Date.now() - entry.ts;
+            const isDanger = ageMs > ADMIN_DANGER_THRESHOLD_MS;
+            const isWarn   = ageMs > ADMIN_STALE_THRESHOLD_MS;
+            const dotColor = isDanger ? '#e53935' : isWarn ? '#f9a825' : '#43a047';
+            const label    = isDanger ? '🔴' : isWarn ? '🟡' : '🟢';
+            statusEl.innerHTML = `<span style="font-size:0.78rem; color:#546e7a;">
+                ${label} <strong>${escapeHtml(entry.facility)}</strong>
+                — ultimo backup: <strong>${fmtAgo(ageMs)}</strong>
+                <span class="text-muted" style="font-size:0.7rem;">(${new Date(entry.ts).toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'})})</span>
+                ${isDanger ? '<span class="badge bg-danger ms-1" style="font-size:0.65rem;">OFFLINE?</span>' : ''}
+            </span>`;
+            statusEl.className = 'mb-3';
         }
 
         function refreshAllAdminStaleness() {
             updateAdminStaleness('struttura1');
             updateAdminStaleness('struttura2');
+            // Auto-richiesta se almeno una struttura è stale e non abbiamo già chiesto di recente
+            const anyStale = ['struttura1','struttura2'].some(r => {
+                const e = adminReceivedBackups[r];
+                return e && (Date.now() - e.ts) > ADMIN_STALE_THRESHOLD_MS;
+            });
+            if (anyStale && Date.now() - adminLastAutoRequest > ADMIN_AUTOREQ_INTERVAL_MS) {
+                adminLastAutoRequest = Date.now();
+                if (adminMqttClient && adminMqttClient.connected) {
+                    adminMqttClient.publish(ADMIN_BACKUP_REQUEST_TOPIC, 'request', { qos: 1 });
+                    console.log('Auto-richiesta backup admin (dati stale)');
+                }
+            }
         }
 
         function renderAdminDashboard(role) {
