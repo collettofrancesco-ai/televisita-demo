@@ -345,6 +345,29 @@
             padding-top: 6px;
             border-top: 1px solid var(--border);
         }
+        /* Header raggruppamento per data nella lista visite */
+        .tv-date-group-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 5px 2px 3px;
+            margin-top: 10px;
+            margin-bottom: 4px;
+            border-bottom: 1.5px solid #e3eaf3;
+        }
+        .tv-date-group-header:first-child { margin-top: 0; }
+        .tv-date-group-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: #546e7a;
+        }
+        .tv-date-group-label.is-today { color: #1565c0; }
+        .tv-date-group-count {
+            font-size: 0.68rem;
+            color: #90a4ae;
+        }
 
         /* Elementi dei documenti */
         .doc-item {
@@ -3295,7 +3318,7 @@
 
         // Stato del mini calendario nella sezione "Le tue richieste"
         const _today = new Date();
-        let calendarSelectedDate = _today.toISOString().slice(0, 10); // default = oggi
+        let calendarSelectedDate = null; // nessun filtro di default: mostra tutte raggruppate
         let calendarViewYear = _today.getFullYear();
         let calendarViewMonth = _today.getMonth(); // 0-indexed
 
@@ -5442,12 +5465,56 @@
                 ? visible.filter(tv => tv.date === calendarSelectedDate)
                 : visible;
 
-            const emptyMsg = calendarSelectedDate
-                ? (currentLang === 'fr' ? 'Aucune visite ce jour' : 'Nessuna visita in questo giorno')
-                : t('no_visits');
-            const html = filtered.length
-                ? filtered.map(tv => visitHTML(tv, isS1)).join('')
-                : `<div class="empty small"><i class="bi bi-calendar-x fs-2"></i><p class="mt-2 mb-0">${emptyMsg}</p></div>`;
+            let html;
+            if (!filtered.length) {
+                const emptyMsg = calendarSelectedDate
+                    ? (currentLang === 'fr' ? 'Aucune visite ce jour' : 'Nessuna visita in questo giorno')
+                    : t('no_visits');
+                html = `<div class="empty small"><i class="bi bi-calendar-x fs-2"></i><p class="mt-2 mb-0">${emptyMsg}</p></div>`;
+            } else if (calendarSelectedDate) {
+                // Filtro per giorno: lista semplice, l'header è già nel footer del calendario
+                html = filtered.map(tv => visitHTML(tv, isS1)).join('');
+            } else {
+                // Nessun filtro: raggruppa per data con header separatori
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const tmrStr   = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+                const ystrStr  = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+                const dayNamesIT = ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
+                const dayNamesFR = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+                const mNamesIT   = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+                const mNamesFR   = ['jan','fév','mar','avr','mai','jui','juil','aoû','sep','oct','nov','déc'];
+                const dayNames   = currentLang === 'fr' ? dayNamesFR : dayNamesIT;
+                const mNames     = currentLang === 'fr' ? mNamesFR   : mNamesIT;
+
+                function groupLabel(dateStr) {
+                    if (dateStr === todayStr) return { text: currentLang === 'fr' ? "Aujourd'hui" : 'Oggi', isToday: true };
+                    if (dateStr === tmrStr)   return { text: currentLang === 'fr' ? 'Demain'       : 'Domani', isToday: false };
+                    if (dateStr === ystrStr)  return { text: currentLang === 'fr' ? 'Hier'          : 'Ieri', isToday: false };
+                    const [y, m, d] = dateStr.split('-');
+                    const dow = new Date(+y, +m - 1, +d).getDay();
+                    return { text: `${dayNames[dow]} ${+d} ${mNames[+m - 1]} ${y}`, isToday: false };
+                }
+
+                // Raggruppa mantenendo l'ordinamento corrente (più recente = data più grande prima)
+                const groups = [];
+                const seen = {};
+                filtered.forEach(tv => {
+                    if (!seen[tv.date]) { seen[tv.date] = []; groups.push(tv.date); }
+                    seen[tv.date].push(tv);
+                });
+
+                html = groups.map(date => {
+                    const lbl = groupLabel(date);
+                    const cnt = seen[date].length;
+                    const cntLabel = currentLang === 'fr'
+                        ? `${cnt} visite${cnt > 1 ? 's' : ''}`
+                        : `${cnt} visit${cnt > 1 ? 'e' : 'a'}`;
+                    return `<div class="tv-date-group-header">
+                        <span class="tv-date-group-label${lbl.isToday ? ' is-today' : ''}">${lbl.text}</span>
+                        <span class="tv-date-group-count">${cntLabel}</span>
+                    </div>` + seen[date].map(tv => visitHTML(tv, isS1)).join('');
+                }).join('');
+            }
 
             document.getElementById('vlist-s1').innerHTML = html;
             document.getElementById('vlist-s2').innerHTML = html;
