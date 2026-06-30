@@ -262,6 +262,90 @@
             overflow-y: auto;
         }
 
+        /* Mini calendario */
+        .tv-calendar {
+            background: #f8faff;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 12px 8px;
+            margin-bottom: 12px;
+            user-select: none;
+        }
+        .tv-cal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .tv-cal-month-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #37474f;
+        }
+        .tv-cal-nav {
+            background: none;
+            border: none;
+            padding: 2px 7px;
+            cursor: pointer;
+            color: #78909c;
+            border-radius: 6px;
+            line-height: 1;
+            font-size: 0.8rem;
+        }
+        .tv-cal-nav:hover { background: #e3f2fd; color: #1565c0; }
+        .tv-cal-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 1px;
+        }
+        .tv-cal-dayname {
+            text-align: center;
+            font-size: 0.62rem;
+            font-weight: 600;
+            color: #90a4ae;
+            padding: 2px 0 4px;
+        }
+        .tv-cal-day {
+            position: relative;
+            text-align: center;
+            font-size: 0.74rem;
+            color: #546e7a;
+            padding: 4px 2px 9px;
+            border-radius: 6px;
+            cursor: pointer;
+            line-height: 1.3;
+        }
+        .tv-cal-day:hover:not(.tv-cal-empty) { background: #e3f2fd; color: #1565c0; }
+        .tv-cal-empty { cursor: default; }
+        .tv-cal-today {
+            font-weight: 700;
+            color: #1565c0;
+            box-shadow: 0 0 0 1.5px #1565c0;
+        }
+        .tv-cal-selected {
+            background: #1565c0 !important;
+            color: #fff !important;
+            font-weight: 600;
+        }
+        .tv-cal-dot {
+            position: absolute;
+            bottom: 3px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: #42a5f5;
+        }
+        .tv-cal-selected .tv-cal-dot { background: rgba(255,255,255,0.75); }
+        .tv-cal-footer {
+            display: flex;
+            align-items: center;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid var(--border);
+        }
+
         /* Elementi dei documenti */
         .doc-item {
             display: flex;
@@ -1632,6 +1716,7 @@
                         <h6 class="fw-bold small text-uppercase text-muted mb-3"><i
                                 class="bi bi-list-ul me-2 text-primary"></i><span data-i18n="your_requests">Le tue
                                 richieste</span></h6>
+                        <div id="cal-s1"></div>
                         <div id="vlist-s1" class="visits-scroll"></div>
                     </div>
 
@@ -1752,6 +1837,7 @@
                         <h6 class="fw-bold small text-uppercase text-muted mb-3"><i class="bi bi-list-ul me-2"
                                 style="color:#00796b;"></i><span data-i18n="all_visits">Tutte le televisite</span>
                         </h6>
+                        <div id="cal-s2"></div>
                         <div id="vlist-s2" class="visits-scroll"></div>
                     </div>
                 </div>
@@ -3206,6 +3292,12 @@
             activeTvId: null,
             currentDoctor: null
         };
+
+        // Stato del mini calendario nella sezione "Le tue richieste"
+        const _today = new Date();
+        let calendarSelectedDate = _today.toISOString().slice(0, 10); // default = oggi
+        let calendarViewYear = _today.getFullYear();
+        let calendarViewMonth = _today.getMonth(); // 0-indexed
 
         // Le televisite "Centro" sono visibili solo alla struttura che le ha create: per l'altra
         // struttura è come se non esistessero (oltre a non arrivarle mai via MQTT, vedi getShared()).
@@ -5269,14 +5361,93 @@
             renderEmailDetail();
         }
 
+        function changeCalendarMonth(delta) {
+            calendarViewMonth += delta;
+            if (calendarViewMonth > 11) { calendarViewMonth = 0; calendarViewYear++; }
+            if (calendarViewMonth < 0)  { calendarViewMonth = 11; calendarViewYear--; }
+            renderVisits();
+        }
+
+        function selectCalendarDate(dateStr) {
+            calendarSelectedDate = (dateStr === null || dateStr === calendarSelectedDate) ? null : dateStr;
+            renderVisits();
+        }
+
+        function calendarHTML(visits) {
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const year = calendarViewYear;
+            const month = calendarViewMonth;
+            const visitDates = new Set(visits.map(tv => tv.date));
+
+            const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Lun=0
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            const monthNamesIT = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+            const monthNamesFR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+            const dayNamesIT = ['Lu','Ma','Me','Gi','Ve','Sa','Do'];
+            const dayNamesFR = ['Lu','Ma','Me','Je','Ve','Sa','Di'];
+            const monthNames = currentLang === 'fr' ? monthNamesFR : monthNamesIT;
+            const dayNames   = currentLang === 'fr' ? dayNamesFR  : dayNamesIT;
+
+            let cells = '';
+            for (let i = 0; i < firstDow; i++) cells += `<div class="tv-cal-day tv-cal-empty"></div>`;
+            for (let d = 1; d <= daysInMonth; d++) {
+                const ds = `${year}-${String(month + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const isToday    = ds === todayStr;
+                const isSelected = ds === calendarSelectedDate;
+                const hasVisits  = visitDates.has(ds);
+                let cls = 'tv-cal-day';
+                if (isToday)    cls += ' tv-cal-today';
+                if (isSelected) cls += ' tv-cal-selected';
+                if (hasVisits)  cls += ' tv-cal-has-visits';
+                cells += `<div class="${cls}" onclick="selectCalendarDate('${ds}')">${d}${hasVisits ? '<span class="tv-cal-dot"></span>' : ''}</div>`;
+            }
+
+            const label = `${monthNames[month]} ${year}`;
+            const selCount = calendarSelectedDate ? visits.filter(v => v.date === calendarSelectedDate).length : null;
+            const footerLabel = currentLang === 'fr'
+                ? `${selCount} visite${selCount !== 1 ? 's' : ''} le ${fmtDate(calendarSelectedDate)}`
+                : `${selCount} visit${selCount !== 1 ? 'e' : 'a'} il ${fmtDate(calendarSelectedDate)}`;
+            const showAllLabel = currentLang === 'fr' ? 'Tout afficher' : 'Mostra tutte';
+
+            return `
+<div class="tv-calendar">
+  <div class="tv-cal-header">
+    <button class="tv-cal-nav" onclick="changeCalendarMonth(-1)"><i class="bi bi-chevron-left"></i></button>
+    <span class="tv-cal-month-label">${label}</span>
+    <button class="tv-cal-nav" onclick="changeCalendarMonth(1)"><i class="bi bi-chevron-right"></i></button>
+  </div>
+  <div class="tv-cal-grid">
+    ${dayNames.map(n => `<div class="tv-cal-dayname">${n}</div>`).join('')}
+    ${cells}
+  </div>
+  ${calendarSelectedDate ? `<div class="tv-cal-footer">
+    <span class="text-muted" style="font-size:0.72rem;"><i class="bi bi-calendar2-check me-1"></i>${footerLabel}</span>
+    <button class="btn btn-link btn-sm p-0 ms-2" style="font-size:0.72rem;" onclick="selectCalendarDate(null)">${showAllLabel}</button>
+  </div>` : ''}
+</div>`;
+        }
+
         function renderVisits() {
             const isS1 = S.role === 'struttura1';
             // Le televisite "Centro" sono visibili solo alla struttura che le ha create: per l'altra
             // struttura è come se non esistessero (oltre a non arrivarle mai via MQTT, vedi getShared()).
             const visible = visibleTelevisite();
-            const html = visible.length
-                ? visible.map(tv => visitHTML(tv, isS1)).join('')
-                : `<div class="empty small"><i class="bi bi-calendar-x fs-2"></i><p class="mt-2 mb-0">${t('no_visits')}</p></div>`;
+
+            const calHtml = calendarHTML(visible);
+            document.getElementById('cal-s1').innerHTML = calHtml;
+            document.getElementById('cal-s2').innerHTML = calHtml;
+
+            const filtered = calendarSelectedDate
+                ? visible.filter(tv => tv.date === calendarSelectedDate)
+                : visible;
+
+            const emptyMsg = calendarSelectedDate
+                ? (currentLang === 'fr' ? 'Aucune visite ce jour' : 'Nessuna visita in questo giorno')
+                : t('no_visits');
+            const html = filtered.length
+                ? filtered.map(tv => visitHTML(tv, isS1)).join('')
+                : `<div class="empty small"><i class="bi bi-calendar-x fs-2"></i><p class="mt-2 mb-0">${emptyMsg}</p></div>`;
 
             document.getElementById('vlist-s1').innerHTML = html;
             document.getElementById('vlist-s2').innerHTML = html;
