@@ -4937,12 +4937,50 @@
                     // lo stato completo incluse le visite Centro. Solo la propria struttura si
                     // iscrive al proprio subtopic — l'altra struttura non lo vede mai.
                     mqttClient.subscribe(topic + '/selfbackup/' + S.role, { qos: 1 });
+                    // Sottoscrizione ai chunk documenti del selfbackup (privati per struttura)
+                    mqttClient.subscribe(topic + '/selfbackup/' + S.role + '/doc', { qos: 1 });
+                    // Se non siamo in cold start (PC abituale che si riconnette), spingi i doc
+                    // al nuovo PC già connesso — dopo 2s per dare tempo a MQTT di stabilizzarsi.
+                    if (!mqttColdStart) setTimeout(() => pushDocsSelfBackup(), 2000);
                 });
 
                 mqttClient.on('message', (receivedTopic, message) => {
                     if (receivedTopic === ADMIN_BACKUP_REQUEST_TOPIC) {
                         console.log('Richiesta di backup immediato dal pannello admin');
                         publishAdminBackup();
+                        return;
+                    }
+
+                    // Chunk documento dal canale selfbackup: arriva in qualsiasi momento
+                    // (non solo al cold start) quando il PC abituale torna online e spinge i file.
+                    if (currentTopicId && receivedTopic === MQTT_TOPIC_BASE + currentTopicId + '/selfbackup/' + S.role + '/doc') {
+                        try {
+                            const data = JSON.parse(message.toString());
+                            if (data.iv && data.ciphertext) {
+                                decryptPayload(data, currentGroupCode).then(decrypted => {
+                                    if (!decrypted || decrypted.type !== 'doc_self_chunk') return;
+                                    const { docId, chunkIndex, totalChunks, chunkData, meta } = decrypted;
+                                    if (!pendingIncomingDocs[docId]) {
+                                        pendingIncomingDocs[docId] = { chunks: new Array(totalChunks), receivedCount: 0 };
+                                    }
+                                    const progress = pendingIncomingDocs[docId];
+                                    if (!progress.chunks[chunkIndex]) {
+                                        progress.chunks[chunkIndex] = chunkData;
+                                        progress.receivedCount++;
+                                    }
+                                    if (progress.receivedCount === totalChunks) {
+                                        const fullBase64 = progress.chunks.join('');
+                                        delete pendingIncomingDocs[docId];
+                                        completedDocsCache[docId] = fullBase64;
+                                        let doc = S.docs.find(d => d.id === docId);
+                                        if (!doc && meta) { doc = { ...meta }; S.docs.push(doc); }
+                                        if (doc) { doc.base64Data = fullBase64; doc.isUploaded = true; }
+                                        persistTvState(getSharedStateForStorage());
+                                        renderAll();
+                                    }
+                                });
+                            }
+                        } catch (e) { console.error('Errore doc selfbackup chunk:', e); }
                         return;
                     }
 
@@ -5083,6 +5121,31 @@
                     { qos: 1, retain: true }
                 );
             });
+        }
+
+        // Pubblica ogni documento (inclusi privati Centro) come chunks cifrati sul canale
+        // selfbackup, privato per struttura. Chiamata quando il dispositivo si riconnette
+        // così il collega sull'altro PC riceve i file automaticamente.
+        async function pushDocsSelfBackup() {
+            if (!mqttClient || !mqttClient.connected || !currentTopicId) return;
+            const docsWithData = S.docs.filter(d => d.base64Data);
+            if (!docsWithData.length) return;
+            const selfBackupDocTopic = MQTT_TOPIC_BASE + currentTopicId + '/selfbackup/' + S.role + '/doc';
+            const chunkSize = 120000;
+            for (const doc of docsWithData) {
+                const dataStr = doc.base64Data;
+                const totalChunks = Math.ceil(dataStr.length / chunkSize);
+                const meta = (({ base64Data, file, ...m }) => m)(doc);
+                for (let i = 0; i < totalChunks; i++) {
+                    const chunkData = dataStr.substring(i * chunkSize, (i + 1) * chunkSize);
+                    const payload = { type: 'doc_self_chunk', docId: doc.id, chunkIndex: i, totalChunks, chunkData, meta };
+                    const encrypted = await encryptPayload(payload, currentGroupCode);
+                    if (!encrypted) continue;
+                    const envelope = { sender: S.role, iv: encrypted.iv, ciphertext: encrypted.ciphertext };
+                    mqttClient.publish(selfBackupDocTopic, JSON.stringify(envelope), { qos: 1 });
+                    await new Promise(r => setTimeout(r, 30));
+                }
+            }
         }
 
         function syncState(event) {
