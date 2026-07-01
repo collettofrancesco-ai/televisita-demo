@@ -6086,6 +6086,7 @@
                     ${canAct ? `<button class="btn btn-outline-success btn-sm py-0" onclick="event.stopPropagation(); acceptSched('${tv.id}')"><i class="bi bi-check me-1"></i>${t('btn_accept')}</button>
                                   <button class="btn btn-outline-danger btn-sm py-0"  onclick="event.stopPropagation(); rejectSched('${tv.id}')"><i class="bi bi-x me-1"></i>${t('btn_reject')}</button>` : ''}
                     ${waiting ? `<span class="text-muted small"><i class="bi bi-hourglass me-1"></i>${t('waiting_confirm')}</span>` : ''}
+                    ${scheduledByMe ? `<button class="btn btn-outline-secondary btn-sm py-0" onclick="event.stopPropagation(); rescheduleVisit('${tv.id}')"><i class="bi bi-arrow-repeat me-1"></i>${currentLang === 'fr' ? 'Reprogrammer' : 'Riprogramma'}</button>` : ''}
                     ${canCancel ? `<button class="btn btn-outline-danger btn-sm py-0 ms-auto" onclick="event.stopPropagation(); cancelVisit('${tv.id}')"><i class="bi bi-x-octagon me-1"></i>${t('btn_cancel_visit')}</button>` : ''}
                     ${tv.status === 'completata' ? `<span class="text-muted small"><i class="bi bi-check-all me-1"></i>${t('status_completata')}</span>` : ''}
                     ${tv.status === 'rifiutata' ? `<span class="text-danger small"><i class="bi bi-x-circle me-1"></i>${t('status_rifiutata')}</span>` : ''}
@@ -9386,6 +9387,48 @@
             renderAll();
             showToast(t('toast_sched_rejected', { patient: tv.patient }), 'warning');
             syncState({ kind: 'visit_rejected', patient: tv.patient, scheduledBy: tv.scheduledBy, date: fmtDate(tv.date), time: tv.time, tvId: id, visitMode: tv.visitMode });
+        }
+
+        function rescheduleVisit(id) {
+            const tv = S.televisite.find(t => t.id === id);
+            if (!tv) return;
+            const isS2 = S.role === 'struttura2';
+            const p = isS2 ? 'f2' : 'f';
+            const set = (fieldId, val) => { const el = document.getElementById(fieldId); if (el) el.value = val || ''; };
+
+            set(`${p}-patient`,    tv.patient);
+            set(`${p}-phone`,      tv.phone);
+            set(`${p}-email`,      tv.email);
+            set(`${p}-dob`,        tv.dob);
+            set(`${p}-pob`,        tv.pob);
+            set(`${p}-cf`,         tv.cf);
+            set(`${p}-date`,       '');
+            set(`${p}-time`,       '');
+            set(`${p}-notes`,      '');
+
+            const genderEl = document.getElementById(`${p}-gender`);
+            if (genderEl && tv.gender) genderEl.value = tv.gender;
+
+            const modeEl = document.getElementById(`${p}-visit-mode`);
+            if (modeEl && tv.visitMode) modeEl.value = tv.visitMode;
+
+            const idTypeEl = document.getElementById(`${p}-id-type`);
+            if (idTypeEl && tv.idType) {
+                idTypeEl.value = tv.idType;
+                toggleIdField(p === 'f' ? 'f' : 'f2');
+            } else if (idTypeEl) {
+                idTypeEl.value = '';
+                const idRow = document.getElementById(`${p}-id-value-row`);
+                if (idRow) idRow.style.display = 'none';
+            }
+
+            const card = document.getElementById('card-sched-section');
+            if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setTimeout(() => { const dateEl = document.getElementById(`${p}-date`); if (dateEl) dateEl.focus(); }, 400);
+
+            showToast(currentLang === 'fr'
+                ? `Données de ${escapeHtml(tv.patient)} copiées — choisissez une nouvelle date`
+                : `Dati di ${escapeHtml(tv.patient)} copiati — scegli una nuova data`, 'info');
         }
 
         function cancelVisit(id) {
