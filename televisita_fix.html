@@ -1394,45 +1394,39 @@
             </div>
 
             <!-- View 2: User Login (initially hidden) -->
-            <div id="facility-login-view" style="display: none; max-width: 450px; margin: 0 auto;">
-                <div class="login-card" id="login-form-card" style="cursor: default;">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <button
-                            class="btn btn-link text-muted p-0 d-inline-flex align-items-center text-decoration-none"
-                            onclick="showFacilitySelection()" style="font-size: 0.85rem; font-weight: 500;">
-                            <i class="bi bi-arrow-left me-1"></i> <span data-i18n="btn_back">Indietro</span>
+            <div id="facility-login-view" style="display: none; max-width: 420px; margin: 0 auto;">
+                <div class="login-card" id="login-form-card" style="cursor:default; padding: 1.5rem 1.75rem;">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <button class="btn btn-link text-muted p-0 d-inline-flex align-items-center text-decoration-none"
+                            onclick="showFacilitySelection()" style="font-size:0.82rem; font-weight:500;">
+                            <i class="bi bi-arrow-left me-1"></i><span data-i18n="btn_back">Indietro</span>
                         </button>
-                        <span id="selected-facility-badge" class="badge px-3 py-1.5" style="font-size: 0.78rem;">Centro
-                            Tunisia</span>
+                        <span id="selected-facility-badge" class="badge px-3" style="font-size:0.75rem;">Centro Tunisia</span>
                     </div>
 
-                    <h4 class="fw-bold mb-3" style="color: var(--text);" data-i18n="login_user_title">Accedi alla
-                        Struttura</h4>
-                    <p class="text-muted small mb-4" data-i18n="login_user_subtitle">Seleziona il tuo profilo e
-                        inserisci la password</p>
+                    <h5 class="fw-bold mb-1" style="color:var(--text);" data-i18n="login_user_title">Accedi alla Struttura</h5>
+                    <p class="text-muted mb-3" style="font-size:0.78rem;" data-i18n="login_user_subtitle">Seleziona il tuo profilo e inserisci la password</p>
 
-                    <div class="text-start mb-3">
-                        <label for="user-select" class="form-label small fw-semibold text-muted"
-                            data-i18n="login_label_user">Profilo Utente</label>
-                        <select id="user-select" class="form-select" onchange="onUserSelectChange()"></select>
+                    <div class="text-start mb-2">
+                        <label for="user-select" class="form-label small fw-semibold text-muted mb-1" data-i18n="login_label_user">Profilo Utente</label>
+                        <select id="user-select" class="form-select form-select-sm" onchange="onUserSelectChange()"></select>
                     </div>
 
-                    <div class="text-start mb-3">
-                        <label for="pwd-input" class="form-label small fw-semibold text-muted"
-                            data-i18n="pwd_placeholder">Password</label>
-                        <input type="password" id="pwd-input" class="form-control" placeholder="Password"
+                    <div class="text-start mb-2">
+                        <label for="pwd-input" class="form-label small fw-semibold text-muted mb-1" data-i18n="pwd_placeholder">Password</label>
+                        <input type="password" id="pwd-input" class="form-control form-control-sm" placeholder="Password"
                             onkeydown="if(event.key==='Enter')submitLogin()">
                     </div>
 
-                    <div id="login-error-msg" class="text-danger small mb-3" style="min-height: 1.2em;"></div>
+                    <div id="login-error-msg" class="text-danger small mb-2" style="min-height:1.1em;"></div>
 
-                    <button class="btn btn-primary w-100 py-2.5 fw-bold" onclick="submitLogin()">
+                    <button class="btn btn-primary w-100 fw-bold" onclick="submitLogin()">
                         <i class="bi bi-box-arrow-in-right me-2"></i><span data-i18n="login_btn">Accedi</span>
                     </button>
 
-                    <div class="text-center mt-3">
+                    <div class="text-center mt-2">
                         <button type="button" class="btn btn-link btn-sm text-muted p-0"
-                            style="font-size:0.8rem;" onclick="openForgotPwModal()"
+                            style="font-size:0.78rem;" onclick="openForgotPwModal()"
                             data-i18n="forgot_pw_link">Password dimenticata?</button>
                     </div>
                 </div>
