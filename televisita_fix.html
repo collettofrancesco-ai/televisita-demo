@@ -10626,7 +10626,7 @@
         function addNotif(icon, title, body, type = 'info', emailId = null) {
             const now = new Date();
             const time = now.toLocaleTimeString(currentLang === 'fr' ? 'fr-FR' : 'it-IT', { hour: '2-digit', minute: '2-digit' });
-            N.items.unshift({ icon, title, body, type, time, id: 'n' + Date.now(), emailId });
+            N.items.unshift({ icon, title, body, type, time, id: 'n' + Date.now(), emailId, read: false });
             renderNotifs();
         }
 
@@ -10638,16 +10638,22 @@
                 list.innerHTML = `<div class="text-muted text-center small py-3">${t('no_notifications')}</div>`;
                 return;
             }
-            dot.style.display = '';
-            dot.textContent = N.items.length > 9 ? '9+' : N.items.length;
+            const unreadCount = N.items.filter(n => !n.read).length;
+            if (unreadCount > 0) {
+                dot.style.display = '';
+                dot.textContent = unreadCount > 9 ? '9+' : unreadCount;
+            } else {
+                dot.style.display = 'none';
+            }
             list.innerHTML = N.items.map(n => {
                 const clickable = n.emailId ? `style="cursor: pointer; transition: background 0.15s;" onclick="openEmailModal('${n.emailId}'); toggleNotifPanel(true);"` : '';
                 const hoverClass = n.emailId ? 'clickable-notif' : '';
+                const unreadStyle = !n.read ? 'border-left:3px solid #e65100;padding-left:8px;' : 'padding-left:11px;';
                 return `
-        <div class="doc-notif ${n.type === 'incoming' ? 'incoming' : ''} ${hoverClass} mb-2" ${clickable}>
+        <div class="doc-notif ${n.type === 'incoming' ? 'incoming' : ''} ${hoverClass} mb-2" style="${unreadStyle}" ${clickable}>
             <i class="${n.icon}" style="font-size:1.1rem;color:${n.type === 'incoming' ? '#e65100' : '#2e7d32'};flex-shrink:0;margin-top:2px;"></i>
             <div style="min-width:0;">
-                <div class="fw-semibold" style="font-size:.82rem;">${n.title}</div>
+                <div class="${!n.read ? 'fw-bold' : 'fw-semibold'}" style="font-size:.82rem;">${n.title}</div>
                 <div class="text-muted" style="font-size:.75rem;">${n.body}</div>
                 <div class="text-muted" style="font-size:.68rem;margin-top:.2rem;"><i class="bi bi-clock me-1"></i>${n.time}</div>
             </div>
@@ -10903,7 +10909,13 @@
         function toggleNotifPanel(forceClose) {
             const panel = document.getElementById('notif-panel');
             const isOpen = panel.style.display !== 'none';
+            const willOpen = forceClose !== false && !isOpen;
             panel.style.display = (forceClose === false || isOpen) ? 'none' : '';
+            if (willOpen) {
+                // Marca tutte come lette appena il pannello si apre
+                N.items.forEach(n => { n.read = true; });
+                renderNotifs();
+            }
         }
 
         document.addEventListener('click', e => {
